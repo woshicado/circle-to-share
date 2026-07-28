@@ -80,6 +80,23 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
+        <!--
+          Quick Settings tile. Runs on the accessibility service above, so it
+          needs no capture permission of its own. BIND_QUICK_SETTINGS_TILE is
+          held by the system, not requested by us — it only restricts who may
+          bind this service.
+        -->
+        <service
+            android:name=".tile.CaptureTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_app_glyph"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="eu.woshicado.circletoshare.fileprovider"

@@ -11,7 +11,7 @@
     <string name="btn_assistant_settings">Open assistant settings</string>
 
     <string name="setup_step2_title">2. Enable the capture fallback (recommended)</string>
-    <string name="setup_step2_body">If your device doesn\'t hand screenshots to third-party assistants, the accessibility service captures the screen instead. Under Accessibility → Circle to Share, turn on the main \"Use\" toggle. (This also powers the floating button below.)</string>
+    <string name="setup_step2_body">If your device doesn\'t hand screenshots to third-party assistants, the accessibility service captures the screen instead. Under Accessibility → Circle to Share, turn on the main \"Use\" toggle. (This also powers the Quick Settings tile and the floating button below.)</string>
     <string name="status_fallback_on">✓ Fallback enabled</string>
     <string name="status_fallback_off">✗ Fallback disabled</string>
     <string name="btn_accessibility_settings">Open accessibility settings</string>
@@ -21,7 +21,13 @@
     <string name="btn_test">Test capture</string>
 
     <string name="triggers_title">How to open it</string>
-    <string name="triggers_body">Ways to trigger a capture — use any of them:\n\n• Power button: press and hold (works via the assistant role from step 1). Set under System → Gestures → Press &amp; hold power button → Digital assistant, if it opens the power menu instead.\n\n• Corner swipe: swipe up from a bottom corner — another way to invoke the assistant from step 1, if enabled in your system settings.\n\n• Floating button (below): the app\'s own always-on-screen bubble you can tap from any app. Drag it anywhere; it stays out of the way. Needs the accessibility fallback (step 2) enabled.</string>
+    <string name="triggers_body">Ways to trigger a capture — use any of them:\n\n• Power button: press and hold (works via the assistant role from step 1). Set under System → Gestures → Press &amp; hold power button → Digital assistant, if it opens the power menu instead.\n\n• Corner swipe: swipe up from a bottom corner — another way to invoke the assistant from step 1, if enabled in your system settings.\n\n• Quick Settings tile: tapping it closes the shade and captures what was behind it. To add it, pull down the shade, tap the pencil/edit button, and drag the \"Circle to Share\" tile into your tiles — or use the button below, if your Android version offers it. Needs the accessibility fallback (step 2) enabled.\n\n• Floating button (below): the app\'s own always-on-screen bubble you can tap from any app. Drag it anywhere; it stays out of the way. Needs the accessibility fallback (step 2) enabled.</string>
+    <string name="tile_label">Circle to Share</string>
+    <string name="btn_add_tile">Add Quick Settings tile</string>
+    <string name="tile_already_added">The tile is already in your Quick Settings.</string>
+    <string name="tile_add_failed">Couldn\'t open the add-tile prompt. Add it from the shade\'s edit screen instead.</string>
+    <string name="error_tile_needs_accessibility">Enable the accessibility fallback (step 2) first — the Quick Settings tile runs on it.</string>
+    <string name="error_tile_locked">Unlock the device first to capture the screen.</string>
     <string name="switch_bubble">Show floating capture button</string>
     <string name="switch_bubble_note">A small draggable bubble on screen. Tap it to capture, crop, and share from anywhere.</string>
     <string name="error_bubble_needs_accessibility">Enable the accessibility fallback (step 2) first — the bubble runs on it.</string>
@@ -47,5 +53,5 @@
     <string name="error_no_settings">Couldn\'t open settings on this device.</string>
 
     <string name="accessibility_service_label">Circle to Share</string>
-    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it — with the assistant gesture or the app\'s floating button — so you can crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen. Nothing is captured until you trigger it, nothing is saved to your device, and nothing ever leaves it.</string>
+    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it — with the assistant gesture, the Quick Settings tile, or the app\'s floating button — so you can crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen. Nothing is captured until you trigger it, nothing is saved to your device, and nothing ever leaves it.</string>
 </resources>

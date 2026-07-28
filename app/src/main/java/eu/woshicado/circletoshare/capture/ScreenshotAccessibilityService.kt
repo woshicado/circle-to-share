@@ -15,6 +15,7 @@ import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
@@ -42,6 +43,19 @@ import kotlin.math.abs
  */
 class ScreenshotAccessibilityService : AccessibilityService() {
 
+    /** Why a shade-initiated capture was turned down. */
+    enum class Refusal {
+        /** Accepted — the capture is under way. */
+        NONE,
+
+        /** Screen is locked, dozing, or dreaming. The caller may prompt for an
+         *  unlock and retry; nothing else here can clear this. */
+        LOCKED,
+
+        /** A crop tool is already open or opening, from any path. */
+        BUSY
+    }
+
     companion object {
         var instance: ScreenshotAccessibilityService? = null
             private set
@@ -56,6 +70,25 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // so keep the whole collection pass in the tens of milliseconds.
         private const val SNAP_MAX_NODES = 400
         private const val SNAP_MAX_DEPTH = 25
+
+        // How long to wait after hiding the trigger before grabbing the screen.
+        // The bubble is one removeView away; the Quick Settings shade has to
+        // play its collapse animation first, or the shot is of the panel.
+        private const val BUBBLE_HIDE_DELAY_MS = 80L
+        // The shade path watches for the collapse instead of guessing at its
+        // duration — see awaitShadeCollapsed. Measured on a Pixel (Android 17,
+        // animation scale 0.5x): the shade window holds full height for ~465ms
+        // and then snaps to the status-bar strip, consistently across runs.
+        // A fixed wait long enough to cover that on every device spent ~340ms
+        // of every capture doing nothing.
+        private const val SHADE_POLL_MS = 20L
+        // A couple of frames after the window resizes, for the last one to be
+        // composited before we read the framebuffer.
+        private const val SHADE_SETTLE_MS = 50L
+        // Backstop if the shade never reports collapsed (OEM skin whose panel
+        // isn't a full-height system window). Shooting a shade is better than
+        // hanging forever with the latch held.
+        private const val SHADE_WAIT_TIMEOUT_MS = 1200L
 
         fun isBubbleEnabled(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -357,7 +390,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (bubbleView != null) return
         val size = dp(52)
         val icon = ImageView(this).apply {
-            setImageResource(R.drawable.ic_bubble)
+            setImageResource(R.drawable.ic_app_glyph)
             val pad = dp(13)
             setPadding(pad, pad, pad, pad)
             background = GradientDrawable().apply {
@@ -452,32 +485,137 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Hide the bubble (so it isn't in the shot), then grab the screen and
-     * show the crop overlay. Called when the bubble is tapped.
+     * Capture from the Quick Settings tile: dismiss the shade first, then wait
+     * out its collapse animation so the shot shows the app underneath rather
+     * than the panel the user just tapped.
+     *
+     * Nothing is dismissed before a refusal is decided, so a refused tap leaves
+     * the shade open and costs the user nothing. The caller needs the reason,
+     * not just a boolean: [Refusal.LOCKED] is the one it can act on, by
+     * prompting for an unlock and trying again. (A capture abandoned *after*
+     * this returns [Refusal.NONE] — screen locked during the wait — does cost
+     * the user their shade; see `abandonCapture`.)
      */
-    fun triggerCapture() {
-        if (capturing) return // a tool is already open/opening
-        capturing = true
-        val gen = ++bubbleCaptureGen
-        removeBubble()
-        ui.postDelayed({
-            if (gen != bubbleCaptureGen) return@postDelayed // assistant took over
-            capture { bitmap ->
-                ui.post {
-                    if (gen != bubbleCaptureGen) return@post // assistant took over
-                    if (bitmap != null) {
-                        val snap = if (Prefs.isSnapEnabled(this)) collectSnapBounds() else null
-                        presentOverlay(bitmap, snap)
-                    } else {
-                        Toast.makeText(
-                            this, R.string.error_capture_failed, Toast.LENGTH_LONG
-                        ).show()
-                        capturing = false
-                        refreshBubble()
-                    }
+    fun triggerCaptureFromShade(): Refusal {
+        // The same gate the bubble lives behind: never shoot, and never present
+        // the crop tool, over a lock screen or AOD.
+        //
+        // The tile can't make this call for itself — TileService.isLocked is
+        // isDeviceLocked, which a trust agent (Extend Unlock) clears while the
+        // keyguard is still on screen, so it reads "unlocked" on a lock screen
+        // we must not capture. isScreenUsable()'s isKeyguardLocked() is true
+        // there. It's also the right gate for the unlockAndRun path: keying off
+        // `userPresent` instead would race ACTION_USER_PRESENT, which can land
+        // after the post-unlock runnable does.
+        if (!isScreenUsable()) return Refusal.LOCKED
+        if (capturing) return Refusal.BUSY // a tool is already open/opening
+
+        // SystemUI registers this action only while the shade is expanded and
+        // the keyguard is down, so `false` means "there was no shade to
+        // dismiss" — the normal case on the post-unlock retry, where the
+        // unlock already collapsed it — not "refused". Treating it as a
+        // failure would silently drop the capture the user just authenticated
+        // for. With no shade there is no collapse to outlast, so shoot on the
+        // same short delay the bubble uses.
+        val gen = beginCapture() ?: return Refusal.BUSY
+        if (performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)) {
+            awaitShadeCollapsed(gen)
+        } else {
+            ui.postDelayed({ runCapture(gen) }, BUBBLE_HIDE_DELAY_MS)
+        }
+        return Refusal.NONE
+    }
+
+    /**
+     * True while an expanded shade is on screen.
+     *
+     * SystemUI keeps the panel in one full-height system window for the whole
+     * collapse and resizes it to the status-bar strip only at the very end, so
+     * this flips exactly once — when the shade is really gone — rather than
+     * tracking the animation partway. Measured on a Pixel: full height for
+     * ~465ms, then 204px. On a skin that lays the panel out differently the
+     * predicate simply never goes false and the timeout takes over.
+     */
+    private fun shadeExpanded(): Boolean {
+        val half = windowManager.currentWindowMetrics.bounds.height() / 2
+        return windows.any { w ->
+            w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
+                Rect().also { w.getBoundsInScreen(it) }.height() > half
+        }
+    }
+
+    /**
+     * Shoot as soon as the shade is really gone, rather than waiting out a
+     * guessed duration. The collapse is SystemUI's animation, not ours — it
+     * varies by device, skin and animation scale, so any fixed number is either
+     * too short somewhere (a shot of the shade) or wasteful everywhere. The
+     * fixed 800ms this replaced spent ~340ms per capture doing nothing.
+     */
+    private fun awaitShadeCollapsed(gen: Int) {
+        val deadline = SystemClock.uptimeMillis() + SHADE_WAIT_TIMEOUT_MS
+        ui.post(object : Runnable {
+            override fun run() {
+                if (gen != bubbleCaptureGen) return // superseded
+                if (shadeExpanded() && SystemClock.uptimeMillis() < deadline) {
+                    ui.postDelayed(this, SHADE_POLL_MS)
+                } else {
+                    ui.postDelayed({ runCapture(gen) }, SHADE_SETTLE_MS)
                 }
             }
-        }, 80)
+        })
+    }
+
+    /**
+     * Hide the bubble (so it isn't in the shot), then grab the screen and
+     * show the crop overlay. Called when the bubble is tapped.
+     *
+     * [delayMs] is how long to wait before the shot — long enough for whatever
+     * UI triggered it to be off the screen.
+     */
+    fun triggerCapture(delayMs: Long = BUBBLE_HIDE_DELAY_MS) {
+        val gen = beginCapture() ?: return
+        ui.postDelayed({ runCapture(gen) }, delayMs)
+    }
+
+    /** Claim the capture latch and hide the bubble, returning the generation
+     *  that now owns it — or null if a tool is already open/opening. */
+    private fun beginCapture(): Int? {
+        if (capturing) return null
+        capturing = true
+        removeBubble()
+        return ++bubbleCaptureGen
+    }
+
+    /** Take the shot and present the crop overlay, if [gen] still owns the
+     *  capture and the screen is still usable. */
+    private fun runCapture(gen: Int) {
+        if (gen != bubbleCaptureGen) return // assistant took over
+        // The screen can lock or doze off during the wait — a long one on the
+        // shade path. Bail rather than shoot, or we'd present an interactive
+        // crop tool holding a pre-lock shot over the keyguard.
+        if (!isScreenUsable()) return abandonCapture()
+        capture { bitmap ->
+            ui.post {
+                if (gen != bubbleCaptureGen) return@post // assistant took over
+                if (!isScreenUsable()) return@post abandonCapture()
+                if (bitmap != null) {
+                    val snap = if (Prefs.isSnapEnabled(this)) collectSnapBounds() else null
+                    presentOverlay(bitmap, snap)
+                } else {
+                    Toast.makeText(
+                        this, R.string.error_capture_failed, Toast.LENGTH_LONG
+                    ).show()
+                    abandonCapture()
+                }
+            }
+        }
+    }
+
+    /** Give up an in-flight capture and release the latch, so a screen that
+     *  locked mid-capture doesn't leave the tool wedged shut. */
+    private fun abandonCapture() {
+        capturing = false
+        refreshBubble()
     }
 
     /**
@@ -553,7 +691,20 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        windowManager.addView(screen, params)
+        // Guarded like addBubble: the window token dies with the service, and
+        // an unguarded throw here would strand `capturing` at true with no
+        // overlay for refreshBubble to tear down — wedging every future
+        // capture, from every path, until the service is toggled.
+        if (runCatching { windowManager.addView(screen, params) }.isFailure) {
+            overlayBitmap = null
+            // Restore the "no overlay is open" invariant overlayGen documents —
+            // it was claimed just above, and leaving it pointing at the live
+            // generation would let a future overlayGen-only check clear a latch
+            // the assistant owns.
+            overlayGen = -1
+            abandonCapture()
+            return
+        }
         overlayView = screen
         screen.setBitmap(bitmap, snap)
         screen.requestFocus()

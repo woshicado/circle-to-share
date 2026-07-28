@@ -19,6 +19,7 @@ Use any of these:
 
 - **Power button (press & hold)** — works via the digital-assistant role.
 - **Swipe up from a bottom corner** — another way to invoke the digital assistant, if enabled in your system settings.
+- **Quick Settings tile** — add it with the **Add Quick Settings tile** button in the app (Android 13+), or by hand: pull down the shade → edit (pencil) → drag the *Circle to Share* tile in. Tapping it collapses the shade and captures what was behind it. Needs the accessibility fallback — without it the tile explains itself and opens the app.
 - **Floating bubble** — an optional, always-on-screen draggable button (toggle in the app). Tap it to capture from any app.
 - _Or any other way that starts your digital assistant_
 
@@ -26,6 +27,7 @@ Use any of these:
 
 - The app registers as a **digital assistant** (`VoiceInteractionService`). Whatever launches the assistant — a press-and-hold of the power button, or a swipe up from a bottom corner — now opens the crop overlay instead of Gemini/Google.
 - The system hands assistants a screenshot of the current screen (`onHandleScreenshot`), the same mechanism Circle to Search uses. On devices/ROMs that don't provide it to third-party assistants, an **accessibility service** (`AccessibilityService.takeScreenshot`) captures instead.
+- The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
 - **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture, solely to align the crop box — nothing is stored or transmitted. This is why the accessibility service declares the "retrieve window content" capability; leave the toggle off and the bounds are never read at all.
 

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Launcher icon artwork (ic_launcher_foreground) with the viewport cropped
-     to the drawn bounds, so it fills the bubble's padded content area. -->
+     to the drawn bounds, so it fills a padded 24dp content area. Used for the
+     floating bubble and the Quick Settings tile (which retints it). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"

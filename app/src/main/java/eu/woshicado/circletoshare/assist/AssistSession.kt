@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
-import android.provider.Settings
 import android.service.voice.VoiceInteractionSession
 import android.view.Display
 import android.view.View
@@ -20,6 +19,7 @@ import android.widget.Toast
 import androidx.core.view.WindowCompat
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.share.ShareHelper
@@ -61,17 +61,10 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
      * ourselves wait this long after [showUptime]; scaled up if the user runs
      * slower animations, and skipped when animations are off.
      */
-    private fun settleDelayMs(): Long {
-        val r = context.contentResolver
-        val scale = maxOf(
-            Settings.Global.getFloat(r, Settings.Global.WINDOW_ANIMATION_SCALE, 1f),
-            Settings.Global.getFloat(r, Settings.Global.TRANSITION_ANIMATION_SCALE, 1f),
-            Settings.Global.getFloat(r, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-        )
-        // 150ms floor: the bubble teardown needs a frame or two before a
-        // clean capture even with animations disabled.
-        return if (scale <= 0f) 150L else (800f * scale.coerceAtLeast(1f)).toLong()
-    }
+    // 150ms floor: the bubble teardown needs a frame or two before a clean
+    // capture even with animations disabled.
+    private fun settleDelayMs(): Long =
+        animationSettleMs(context, baseMs = 800f, offMs = 150L)
 
     /** Run an accessibility capture once the zoom animation has settled. */
     private fun scheduleSettledCapture() {
