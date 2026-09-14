@@ -15,6 +15,7 @@ import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import eu.woshicado.circletoshare.qr.QrCode
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -37,6 +38,8 @@ class CropOverlayView @JvmOverloads constructor(
         fun onLongPressInside() {}
         /** Double-tap on empty space with no selection. */
         fun onDoubleTapEmpty() {}
+        /** Plain tap on a highlighted QR code. */
+        fun onQrTapped(code: QrCode) {}
     }
 
     var listener: Listener? = null
@@ -132,6 +135,20 @@ class CropOverlayView @JvmOverloads constructor(
     private var engagedSnapX = Float.NaN
     private var engagedSnapY = Float.NaN
 
+    // --- Detected QR codes --------------------------------------------------
+    // Codes in bitmap space, plus their view-space boxes (re)derived from the
+    // image matrix — same lifecycle as the snap lines: set per capture,
+    // remapped on rotation, cleared with the bitmap.
+    private var qrCodes: List<QrCode> = emptyList()
+    private var qrRectsView: List<Pair<RectF, QrCode>> = emptyList()
+
+    // True while the current selection is the untouched box a QR tap drew
+    // around the code. Highlights stay visible over such a selection (the
+    // user hasn't started composing a crop of their own); the first real
+    // manipulation — drag, resize, redraw — demotes it to an ordinary
+    // selection and hides them.
+    private var qrSelectionActive = false
+
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val dimPaint = Paint().apply { color = Color.argb(140, 0, 0, 0) }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -152,15 +169,37 @@ class CropOverlayView @JvmOverloads constructor(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    // Default gold, so the QR highlight reads apart from the white crop
+    // chrome; the host recolors per capture via setQrHighlightColor.
+    private val qrStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        color = Color.argb(235, 255, 202, 40)
+        strokeWidth = dp(2.5f)
+    }
+    private val qrFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(36, 255, 202, 40)
+    }
+    private val qrChipPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.argb(235, 255, 202, 40)
+    }
+    private val qrChipTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.BLACK
+        textSize = dp(11f)
+        isFakeBoldText = true
+    }
 
     fun setBitmap(b: Bitmap) {
         bitmap = b
         selection = null
+        qrSelectionActive = false
         mode = Mode.NONE
         resetStroke()
-        // Snap bounds belong to a specific capture — the host sets fresh ones
-        // (or null) right after this.
+        // Snap bounds and QR codes belong to a specific capture — the host
+        // sets fresh ones (or none) right after this.
         setSnapBounds(null)
+        setQrCodes(emptyList())
         updateMatrix()
         listener?.onSelectionChanged(false)
         invalidate()
@@ -169,9 +208,11 @@ class CropOverlayView @JvmOverloads constructor(
     fun clear() {
         bitmap = null
         selection = null
+        qrSelectionActive = false
         mode = Mode.NONE
         resetStroke()
         setSnapBounds(null)
+        setQrCodes(emptyList())
         invalidate()
     }
 
@@ -216,6 +257,7 @@ class CropOverlayView @JvmOverloads constructor(
         )
         if (mapped.width() < minSelection || mapped.height() < minSelection) return
         selection = mapped
+        qrSelectionActive = false
         mode = Mode.NONE
         activeCorner = -1
         resetStroke()
@@ -246,6 +288,42 @@ class CropOverlayView @JvmOverloads constructor(
             RectF(it.left * sx, it.top * sy, it.right * sx, it.bottom * sy)
         }
         rebuildSnapLines()
+    }
+
+    /** Recolor the QR highlight (stroke, fill, chip) to [color]'s RGB; the
+     *  alphas stay fixed. Chip text flips black/white for contrast. */
+    fun setQrHighlightColor(color: Int) {
+        val r = Color.red(color)
+        val g = Color.green(color)
+        val b = Color.blue(color)
+        qrStrokePaint.color = Color.argb(235, r, g, b)
+        qrFillPaint.color = Color.argb(36, r, g, b)
+        qrChipPaint.color = Color.argb(235, r, g, b)
+        // Perceived luminance (ITU-R BT.601) — dark text on light chips,
+        // light text on dark ones.
+        val luminance = 0.299f * r + 0.587f * g + 0.114f * b
+        qrChipTextPaint.color = if (luminance >= 140f) Color.BLACK else Color.WHITE
+        invalidate()
+    }
+
+    /** QR codes detected in the current capture ([QrCode.bounds] in bitmap
+     *  pixels). They are drawn highlighted; a plain tap on one fires
+     *  [Listener.onQrTapped]. */
+    fun setQrCodes(codes: List<QrCode>) {
+        qrCodes = codes
+        rebuildQrRects()
+        invalidate()
+    }
+
+    /** Map the bitmap-space QR boxes into view space (rotation re-derives). */
+    private fun rebuildQrRects() {
+        qrRectsView = if (qrCodes.isEmpty() || imageBounds.isEmpty) {
+            emptyList()
+        } else {
+            qrCodes.map { code ->
+                RectF(code.bounds).also { imageMatrix.mapRect(it) } to code
+            }
+        }
     }
 
     /** Map the bitmap-space element rects into view space and derive the
@@ -372,6 +450,7 @@ class CropOverlayView @JvmOverloads constructor(
         // bounds, making moveTo's coerceIn throw. Start over.
         if (selection != null) {
             selection = null
+            qrSelectionActive = false
             mode = Mode.NONE
             activeCorner = -1
             resetStroke()
@@ -390,6 +469,7 @@ class CropOverlayView @JvmOverloads constructor(
         // The view-space candidate lines depend on the mapping — re-derive
         // them (handles rotation; the bitmap-space rects stay valid).
         rebuildSnapLines()
+        rebuildQrRects()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -399,6 +479,7 @@ class CropOverlayView @JvmOverloads constructor(
         val sel = selection
         if (sel == null) {
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+            drawQrHighlights(canvas)
             // Show the freeform "circle" trail as the finger moves.
             if (hasStroke) canvas.drawPath(strokePath, strokePaint)
             return
@@ -409,6 +490,8 @@ class CropOverlayView @JvmOverloads constructor(
         canvas.drawRect(0f, sel.bottom, width.toFloat(), height.toFloat(), dimPaint)
         canvas.drawRect(0f, sel.top, sel.left, sel.bottom, dimPaint)
         canvas.drawRect(sel.right, sel.top, width.toFloat(), sel.bottom, dimPaint)
+
+        if (qrSelectionActive) drawQrHighlights(canvas)
 
         canvas.drawRect(sel, borderPaint)
 
@@ -422,6 +505,72 @@ class CropOverlayView @JvmOverloads constructor(
         canvas.drawLine(sel.left, sel.bottom, sel.left, sel.bottom - l, handlePaint)
         canvas.drawLine(sel.right, sel.bottom, sel.right - l, sel.bottom, handlePaint)
         canvas.drawLine(sel.right, sel.bottom, sel.right, sel.bottom - l, handlePaint)
+    }
+
+    /** Colored box + chip over each detected code. Only drawn while nothing
+     *  is selected: the highlight isn't part of the delivered crop, so it
+     *  would misrepresent what a selection is about to copy/share. It returns
+     *  when the selection is cleared. The chip carries the decoded payload
+     *  when that fits within the code's own width, else just "QR". */
+    private fun drawQrHighlights(canvas: Canvas) {
+        if (qrRectsView.isEmpty()) return
+        val radius = dp(10f)
+        val chipPadX = dp(6f)
+        val chipPadY = dp(3f)
+        val fm = qrChipTextPaint.fontMetrics
+        val chipH = fm.descent - fm.ascent + chipPadY * 2
+        for ((rect, code) in qrRectsView) {
+            val payload = code.text.trim().replace(Regex("\\s+"), " ")
+            val chipText = if (
+                payload.isNotEmpty() &&
+                qrChipTextPaint.measureText(payload) + chipPadX * 2 <= rect.width()
+            ) payload else "QR"
+            val textWidth = qrChipTextPaint.measureText(chipText)
+            canvas.drawRoundRect(rect, radius, radius, qrFillPaint)
+            canvas.drawRoundRect(rect, radius, radius, qrStrokePaint)
+            // Chip above the top-left corner; inside it when there's no room.
+            val chipLeft = rect.left
+            var chipTop = rect.top - chipH - dp(4f)
+            if (chipTop < 0f) chipTop = rect.top + dp(4f)
+            val chip = RectF(
+                chipLeft, chipTop,
+                chipLeft + textWidth + chipPadX * 2, chipTop + chipH
+            )
+            canvas.drawRoundRect(chip, chipH / 2, chipH / 2, qrChipPaint)
+            canvas.drawText(
+                chipText,
+                chip.left + chipPadX,
+                chip.top + chipPadY - fm.ascent,
+                qrChipTextPaint
+            )
+        }
+    }
+
+    /** Select [code]'s highlight box as the crop, marked as a QR selection
+     *  (highlights stay visible over it). No-op if the mapped box would be
+     *  too small to serve as a selection. */
+    private fun selectQr(code: QrCode) {
+        if (imageBounds.isEmpty) return
+        val mapped = RectF(code.bounds)
+        imageMatrix.mapRect(mapped)
+        mapped.set(
+            mapped.left.coerceIn(imageBounds.left, imageBounds.right),
+            mapped.top.coerceIn(imageBounds.top, imageBounds.bottom),
+            mapped.right.coerceIn(imageBounds.left, imageBounds.right),
+            mapped.bottom.coerceIn(imageBounds.top, imageBounds.bottom)
+        )
+        if (mapped.width() < minSelection || mapped.height() < minSelection) return
+        selection = mapped
+        qrSelectionActive = true
+    }
+
+    /** The QR code under a plain tap at ([x], [y]) in view space, if any. */
+    private fun qrAt(x: Float, y: Float): QrCode? {
+        val slop = dp(8f)
+        return qrRectsView.firstOrNull { (rect, _) ->
+            x >= rect.left - slop && x <= rect.right + slop &&
+                y >= rect.top - slop && y <= rect.bottom + slop
+        }?.second
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -472,6 +621,15 @@ class CropOverlayView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // A real drag (past the tap threshold) is the user taking
+                // over: a box a QR tap drew becomes an ordinary selection and
+                // the highlights hide. Sub-threshold jitter during a tap must
+                // not demote it, or the tap-on-code gesture would misfire.
+                if (mode != Mode.NONE && qrSelectionActive &&
+                    hypot(x - downX, y - downY) >= dp(8f)
+                ) {
+                    qrSelectionActive = false
+                }
                 when (mode) {
                     Mode.DRAWING -> {
                         if (freeform) {
@@ -493,7 +651,35 @@ class CropOverlayView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                // A plain tap on a QR highlight opens its actions AND selects
+                // the code's box, so it can be shared/copied as an image too.
+                // Only while the highlights are visible (no selection, or the
+                // untouched box from a previous QR tap) — an invisible tap
+                // target would be a trap. Claimed before the crop logic below:
+                // there a motionless tap is otherwise a no-op (freeform:
+                // dust-sized stroke discarded; rect: nothing to clear).
+                if (event.actionMasked == MotionEvent.ACTION_UP &&
+                    (selection == null || qrSelectionActive) &&
+                    mode != Mode.RESIZING &&
+                    hypot(x - downX, y - downY) < dp(8f)
+                ) {
+                    val code = qrAt(downX, downY)
+                    if (code != null) {
+                        resetStroke()
+                        resetSnapEngagement()
+                        mode = Mode.NONE
+                        activeCorner = -1
+                        selectQr(code)
+                        listener?.onSelectionChanged(selection != null)
+                        invalidate()
+                        listener?.onQrTapped(code)
+                        return true
+                    }
+                }
                 if (mode == Mode.DRAWING) {
+                    // Whatever this gesture produced (or cleared), it's the
+                    // user composing their own crop — never a QR box.
+                    qrSelectionActive = false
                     if (freeform) {
                         if (hasStroke) {
                             // Bounding box of the drawn loop — padded and clamped

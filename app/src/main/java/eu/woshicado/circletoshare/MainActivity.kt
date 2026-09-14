@@ -8,13 +8,23 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
+import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
+import android.text.Editable
+import android.text.InputFilter
+import android.text.TextWatcher
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.materialswitch.MaterialSwitch
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
@@ -30,6 +40,37 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        // The activity is edge-to-edge (targetSdk 36), so adjustResize alone
+        // does nothing — the keyboard would cover the hex field at the bottom
+        // with no way to scroll it into view. Inset the scroll container by
+        // the IME height so the focused field scrolls above the keyboard.
+        val scroll = findViewById<ScrollView>(R.id.root_scroll)
+        // Somewhere for focus to land when the hex field clears it on Done —
+        // clearFocus() on the window's only focusable bounces right back.
+        scroll.isFocusableInTouchMode = true
+        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, ime.bottom)
+            // Padding makes the field reachable, but doesn't move it — and
+            // requestRectangleOnScreen can't help, because ScrollView's
+            // visibility math ignores its own bottom padding and considers
+            // the covered field "already on screen". Scroll the focused
+            // field above the keyboard by explicit screen geometry instead.
+            if (ime.bottom > 0) {
+                v.post {
+                    val focus = currentFocus ?: return@post
+                    val focusLoc = IntArray(2).also { focus.getLocationOnScreen(it) }
+                    val scrollLoc = IntArray(2).also { v.getLocationOnScreen(it) }
+                    val focusBottom = focusLoc[1] + focus.height - scrollLoc[1]
+                    val visibleBottom = v.height - ime.bottom
+                    val margin = (16 * resources.displayMetrics.density).toInt()
+                    val delta = focusBottom - visibleBottom + margin
+                    if (delta > 0) (v as ScrollView).smoothScrollBy(0, delta)
+                }
+            }
+            insets
+        }
 
         findViewById<Button>(R.id.btn_assistant_settings).setOnClickListener {
             openFirstAvailable(
@@ -93,6 +134,90 @@ class MainActivity : AppCompatActivity() {
             }
             Prefs.setSnapEnabled(this, checked)
         }
+
+        findViewById<MaterialSwitch>(R.id.switch_qr).setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            Prefs.setQrDetectEnabled(this, checked)
+        }
+
+        setupQrColorField()
+    }
+
+    // Guards the color field's TextWatcher against programmatic setText
+    // (initial render, Done-normalize, focus-loss revert).
+    private var syncingColorText = false
+
+    /**
+     * Hex field + live swatch for the QR highlight color. Every edit that
+     * forms a valid color commits immediately (and recolors the swatch);
+     * partial or invalid text simply doesn't commit — the last valid color
+     * stays stored. Enter/Done on a valid color normalizes the text to
+     * "#RRGGBB", drops focus, and closes the keyboard; on an invalid one it
+     * toasts and keeps the field open for fixing. Focus loss reverts the
+     * display to whatever is stored.
+     */
+    private fun setupQrColorField() {
+        val input = findViewById<EditText>(R.id.qr_color_input)
+        val swatch = findViewById<View>(R.id.qr_color_swatch)
+        fun renderSwatch() {
+            swatch.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Prefs.getQrColor(this@MainActivity))
+            }
+        }
+        fun showStored() {
+            syncingColorText = true
+            input.setText(Prefs.getQrColorHex(this))
+            syncingColorText = false
+            renderSwatch()
+        }
+        showStored()
+
+        // Keep the XML LengthFilter; android:digits can't be used for the
+        // hex restriction (see the layout comment), so append our own filter.
+        input.filters = input.filters + InputFilter { source, start, end, _, _, _ ->
+            val kept = buildString {
+                for (i in start until end) {
+                    val c = source[i]
+                    if (c == '#' || c.isDigit() || c in 'a'..'f' || c in 'A'..'F') append(c)
+                }
+            }
+            if (kept.length == end - start) null else kept
+        }
+
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
+            override fun afterTextChanged(s: Editable) {
+                if (syncingColorText) return
+                if (Prefs.setQrColorHex(this@MainActivity, s.toString()) != null) {
+                    renderSwatch()
+                }
+            }
+        })
+
+        // IME_NULL is what a hardware Enter arrives as — the soft keyboard's
+        // Done button sends IME_ACTION_DONE.
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE ||
+                actionId == EditorInfo.IME_NULL
+            ) {
+                val stored = Prefs.setQrColorHex(this, input.text.toString())
+                if (stored == null) {
+                    Toast.makeText(this, R.string.qr_color_invalid, Toast.LENGTH_SHORT).show()
+                } else {
+                    showStored()
+                    input.clearFocus()
+                    getSystemService(InputMethodManager::class.java)
+                        .hideSoftInputFromWindow(input.windowToken, 0)
+                }
+                true
+            } else {
+                false
+            }
+        }
+
+        input.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) showStored() }
     }
 
     override fun onResume() {
@@ -128,6 +253,9 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialSwitch>(R.id.switch_snap).isChecked =
             Prefs.isSnapEnabled(this)
+
+        findViewById<MaterialSwitch>(R.id.switch_qr).isChecked =
+            Prefs.isQrDetectEnabled(this)
         syncingSwitches = false
     }
 

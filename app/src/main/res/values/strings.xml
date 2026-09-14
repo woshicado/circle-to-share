@@ -40,6 +40,13 @@
     <string name="switch_snap">Snap to screen content</string>
     <string name="switch_snap_note">Crop edges snap to the buttons, cards, and images that were on screen. Element positions are read only at the moment of capture and never stored. Needs the accessibility fallback (step 2).</string>
     <string name="error_snap_needs_accessibility">Enable the accessibility fallback (step 2) first — snapping reads element positions through it.</string>
+    <string name="switch_qr">Detect QR codes</string>
+    <string name="switch_qr_note">Highlights QR codes found in the capture — tap one to copy its content or open its link. Scanning happens entirely on this device; nothing is stored or sent anywhere.</string>
+    <string name="qr_color_label">Highlight color</string>
+    <string name="qr_color_hint">#FFCA28</string>
+    <string name="qr_color_invalid">Not a color — use a hex code like #FFCA28</string>
+    <string name="qr_open">Open</string>
+    <string name="qr_open_failed">No app can open this</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_copy">Copy</string>
     <string name="action_share">Share</string>

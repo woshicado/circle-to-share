@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true">
@@ -186,6 +187,59 @@
             android:text="@string/switch_snap_note"
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switch_qr"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/switch_qr"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/qr_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/switch_qr_note"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/qr_color_label"
+                android:textSize="16sp" />
+
+            <View
+                android:id="@+id/qr_color_swatch"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="12dp" />
+
+            <!-- Hex chars are enforced via an InputFilter in code — the
+                 android:digits attribute would swap in a key listener whose
+                 input type hides the IME's Done action. -->
+            <EditText
+                android:id="@+id/qr_color_input"
+                android:layout_width="110dp"
+                android:layout_height="wrap_content"
+                android:hint="@string/qr_color_hint"
+                android:inputType="textNoSuggestions"
+                android:maxLength="7"
+                android:maxLines="1"
+                android:imeOptions="actionDone"
+                android:importantForAutofill="no"
+                android:textSize="15sp" />
+        </LinearLayout>
 
         <Space
             android:layout_width="match_parent"
