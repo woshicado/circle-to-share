@@ -1,10 +1,12 @@
 package eu.woshicado.circletoshare.tile
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
@@ -34,20 +36,26 @@ class CaptureTileService : TileService() {
         private const val KEYGUARD_EXIT_GRACE_MS = 400f
         private const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
         private const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L
+
+        // How long after asking for an unlock a further tap is taken for the
+        // same request. The prompt covers the tile well within this.
+        private const val UNLOCK_PROMPT_DEBOUNCE_MS = 1000L
     }
 
     private val ui = Handler(Looper.getMainLooper())
 
-    // True between prompting for an unlock and the retry firing, so repeated
-    // taps on the lock screen can't stack unlock prompts and retries.
-    private var awaitingUnlock = false
+    // When an unlock was last asked for (uptime), so taps in quick succession
+    // on the lock screen can't stack unlock prompts and retries. A moment in
+    // time rather than a flag waiting to be cleared: nothing reports a prompt
+    // the user backs out of, and a flag left set would keep the tile dead
+    // until the shade is closed and opened again.
+    private var unlockPromptedAt = Long.MIN_VALUE
 
     override fun onStopListening() {
         // The unlock collapses the shade, which is exactly what unbinds us —
         // don't leave a posted retry holding this service alive to toast from
         // a dead context.
         ui.removeCallbacksAndMessages(null)
-        awaitingUnlock = false
         super.onStopListening()
     }
 
@@ -114,18 +122,19 @@ class CaptureTileService : TileService() {
     }
 
     private fun promptUnlockThenCapture() {
-        if (awaitingUnlock) return // a prompt is already up
-        awaitingUnlock = true
+        val now = SystemClock.uptimeMillis()
+        // (Subtraction on its own could overflow against the initial value.)
+        if (unlockPromptedAt != Long.MIN_VALUE && now - unlockPromptedAt < UNLOCK_PROMPT_DEBOUNCE_MS) {
+            return // the prompt for this is already on its way up
+        }
+        unlockPromptedAt = now
         unlockAndRun {
             // SystemUI can run this as the keyguard starts exiting, while
             // isKeyguardLocked() is still true — retrying immediately would be
             // refused again and drop the capture the user just authenticated
             // for. One grace period, then a single attempt that can't re-prompt.
             ui.postDelayed(
-                {
-                    awaitingUnlock = false
-                    capture(mayPromptUnlock = false)
-                },
+                { capture(mayPromptUnlock = false) },
                 animationSettleMs(
                     this,
                     baseMs = KEYGUARD_EXIT_GRACE_MS,
@@ -133,14 +142,13 @@ class CaptureTileService : TileService() {
                 ).coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
             )
         }
-        // A cancelled unlock never runs the block above, so clear the guard on
-        // unbind (onStopListening) rather than relying on it firing.
+        // (A cancelled unlock never runs the block above.)
     }
 
     /** Last resort: the unlock went through but the keyguard is somehow still
      *  up. Say so rather than leaving the tap looking broken. */
     private fun notifyLocked() =
-        Toast.makeText(this, R.string.error_tile_locked, Toast.LENGTH_SHORT).show()
+        ScreenshotAccessibilityService.notify(this, R.string.error_tile_locked)
 
     private fun openApp() {
         val intent = Intent(this, MainActivity::class.java)
@@ -153,8 +161,10 @@ class CaptureTileService : TileService() {
                 )
             )
         } else {
-            // The Intent overload throws UnsupportedOperationException on 34+.
+            // The Intent overload throws UnsupportedOperationException on 34+,
+            // but below 34 it is the only one there is.
             @Suppress("DEPRECATION")
+            @SuppressLint("StartActivityAndCollapseDeprecated")
             startActivityAndCollapse(intent)
         }
     }

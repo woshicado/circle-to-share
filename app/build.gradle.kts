@@ -29,8 +29,10 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 31
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.2.0"
+        versionCode = 7
+        versionName = "0.2.1"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -81,4 +83,9 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     // Pure-Java QR decoding. No native libs, no Play Services, and offline
     implementation("com.google.zxing:core:3.5.3")
+
+    // Tests only — nothing below ships in the APK.
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
 }

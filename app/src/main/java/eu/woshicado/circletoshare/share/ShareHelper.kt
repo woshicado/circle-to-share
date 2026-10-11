@@ -11,6 +11,8 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import eu.woshicado.circletoshare.R
 import java.io.File
+import java.io.IOException
+import java.io.OutputStream
 
 /**
  * Crops live only in the app's cache dir — never in the gallery. Old files
@@ -25,12 +27,15 @@ object ShareHelper {
     /**
      * Crops [source] to [rect] (null = whole bitmap) and either opens the share
      * sheet or copies to the clipboard. Returns false if there was nothing valid
-     * to deliver. Throws only on unexpected IO failure (caller should toast).
+     * to deliver. Throws only on unexpected failure — an [IOException] when
+     * the image could not be written — which the caller should report.
      */
     fun deliver(context: Context, source: Bitmap, rect: Rect?, share: Boolean): Boolean {
-        val bounds = (rect ?: Rect(0, 0, source.width, source.height)).apply {
-            intersect(0, 0, source.width, source.height)
-        }
+        // A copy: the caller's rect is not ours to clamp. intersect() leaves
+        // the rect untouched when there is no overlap at all, so its result
+        // is the "nothing valid to deliver" answer, not something to ignore.
+        val bounds = Rect(rect ?: Rect(0, 0, source.width, source.height))
+        if (!bounds.intersect(0, 0, source.width, source.height)) return false
         if (bounds.width() < 4 || bounds.height() < 4) return false
 
         val cropped = Bitmap.createBitmap(
@@ -59,10 +64,27 @@ object ShareHelper {
     fun writeAndGetUri(context: Context, bitmap: Bitmap): Uri {
         val dir = File(context.cacheDir, DIR).apply { mkdirs() }
         val file = File(dir, "crop-${System.currentTimeMillis()}.png")
-        file.outputStream().use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        try {
+            file.outputStream().use { out -> writePng(bitmap, out) }
+        } catch (e: IOException) {
+            // Don't leave half an image behind for something to pick up.
+            file.delete()
+            throw e
         }
         return FileProvider.getUriForFile(context, AUTHORITY, file)
+    }
+
+    /**
+     * Write [bitmap] to [out] as a PNG, or throw. compress() itself doesn't
+     * throw when the stream it writes to does — storage running full — but
+     * swallows the error and returns false; ignoring that hands a truncated
+     * file on as if it were the image.
+     */
+    @Throws(IOException::class)
+    internal fun writePng(bitmap: Bitmap, out: OutputStream) {
+        if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+            throw IOException("the image could not be written")
+        }
     }
 
     fun cleanupCache(context: Context) {

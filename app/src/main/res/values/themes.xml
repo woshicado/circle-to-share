@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.CircleToShare" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.CircleToShare" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- The main screen draws edge to edge on every Android version (15+
+             enforces it; MainActivity opts in below that): the system bars
+             are transparent over the window background, so their icons must
+             contrast with it — dark icons in the light theme, light icons in
+             the dark one. The two go together: light-bar icons over the
+             opaque bars Android 12–14 would otherwise draw are unreadable. -->
+        <item name="android:windowLayoutInDisplayCutoutMode">always</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
+        <item name="android:windowLightNavigationBar">?attr/isLightTheme</item>
+    </style>
 </resources>

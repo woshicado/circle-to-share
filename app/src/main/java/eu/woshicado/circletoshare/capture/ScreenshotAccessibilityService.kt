@@ -1,39 +1,53 @@
 package eu.woshicado.circletoshare.capture
 
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
 import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Insets
 import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
+import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.TypedValue
 import android.view.Display
 import android.view.Gravity
-import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.WindowInsets
 import android.view.WindowManager
+import android.view.WindowMetrics
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
+import android.window.OnBackInvokedDispatcher
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
 import eu.woshicado.circletoshare.share.ShareHelper
 import kotlin.math.abs
+import java.io.IOException
 
 /**
  * Two jobs:
@@ -60,11 +74,49 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         var instance: ScreenshotAccessibilityService? = null
             private set
 
+        /**
+         * Set by the assistant session while its overlay is up. That overlay
+         * covers the system's own UI just as this service's does, but only
+         * this service can see some of the reasons to get out of the way
+         * (the power menu's window appearing) — so it passes them on.
+         */
+        var onYieldToSystemUi: (() -> Unit)? = null
+
+        /**
+         * Say something to the user from a place with no screen of its own —
+         * a failed capture, a refusal.
+         *
+         * A toast is the obvious tool and mostly doesn't work here: from
+         * Android 13 the system drops toasts from an app in the background
+         * that may not post notifications, which this app (no permissions)
+         * never may; and before that, they are drawn beneath the crop
+         * overlay. So wherever this service is running it shows the message
+         * itself, in a window of its own, and a toast is only the fallback.
+         */
+        fun notify(context: Context, messageRes: Int) {
+            val service = instance
+            if (service != null) {
+                service.showNotice(context.getString(messageRes))
+            } else {
+                Toast.makeText(context, messageRes, Toast.LENGTH_LONG).show()
+            }
+        }
+
         private const val PREFS = "cts"
         private const val KEY_BUBBLE = "bubble_enabled"
         private const val KEY_BUBBLE_X = "bubble_x"
         private const val KEY_BUBBLE_Y = "bubble_y"
+        // Set once the saved spot is known to be measured from the display's
+        // corner — see migrateBubbleOrigin.
+        private const val KEY_BUBBLE_ORIGIN_DISPLAY = "bubble_origin_display"
         private const val UNSET = Int.MIN_VALUE
+        private const val NO_CAPTURE = -1
+
+        private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
+
+        // From this smallest width up, the system shows a taskbar in place
+        // of a plain navigation bar.
+        private const val LARGE_SCREEN_MIN_WIDTH_DP = 600
 
         // Budget for the snap-bounds tree walk — node access is Binder IPC,
         // so keep the whole collection pass in the tens of milliseconds.
@@ -75,6 +127,18 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // The bubble is one removeView away; the Quick Settings shade has to
         // play its collapse animation first, or the shot is of the panel.
         private const val BUBBLE_HIDE_DELAY_MS = 80L
+
+        // How long a notice stays up — a long toast's time.
+        private const val NOTICE_MS = 3500L
+
+        // How long after a window event to look at the screen's state a
+        // second time. Events are delivered the moment they happen (see
+        // notificationTimeout in the service config: with a delay there, a
+        // later event replaces an undelivered one of the same type, and the
+        // power menu's could be lost that way) — but what a window brings
+        // with it, such as the keyguard reporting itself locked, can settle a
+        // moment after the window appears.
+        private const val WINDOW_EVENT_SETTLE_MS = 100L
         // The shade path watches for the collapse instead of guessing at its
         // duration — see awaitShadeCollapsed. Measured on a Pixel (Android 17,
         // animation scale 0.5x): the shade window holds full height for ~465ms
@@ -109,10 +173,36 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     private val ui = Handler(Looper.getMainLooper())
+    private val settledRefresh = Runnable { refreshBubble() }
     private lateinit var windowManager: WindowManager
     private var bubbleView: View? = null
+    private var noticeView: View? = null
+    private val removeNotice = Runnable {
+        noticeView?.let { runCatching { windowManager.removeView(it) } }
+        noticeView = null
+    }
     private var overlayView: CropScreen? = null
+
+    // The display the open overlay was laid out for: its size, and where its
+    // navigation bar and cutout are (which is what tells one landscape from
+    // the other). The overlay's frame is decided when it opens and again
+    // only when one of these changes. It also depends on whether the
+    // navigation bar is currently showing, and that can flip while the
+    // overlay is up (an immersive app underneath, the overlay itself taking
+    // focus) at moments that have nothing to do with layout; re-deciding
+    // then would resize the window under the user's hands and drop the box
+    // they are drawing.
+    private var overlayDisplay: DisplayState? = null
+
+    private data class DisplayState(
+        val width: Int,
+        val height: Int,
+        val navigationBar: Insets,
+        val cutout: Insets
+    )
     private var overlayBitmap: Bitmap? = null
+    private var bubbleDensityDpi = 0
+    private var overlaySnap: SnapBounds? = null
 
     // Last bubble position (persisted), so it reappears where the user left it.
     private var bubbleX = UNSET
@@ -145,6 +235,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // release the latch the assistant now owns (re-showing the bubble on top).
     private var overlayGen = -1
 
+    // The generation of a bubble/tile capture that holds the latch but has
+    // not yet presented its overlay or given up; NO_CAPTURE otherwise.
+    private var pendingCaptureGen = NO_CAPTURE
+
     private val displayManager by lazy { getSystemService(DisplayManager::class.java) }
 
     // Re-evaluate as the screen locks/unlocks/starts dreaming.
@@ -154,10 +248,17 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 Intent.ACTION_USER_PRESENT -> userPresent = true
                 Intent.ACTION_SCREEN_OFF -> userPresent = false
                 // Lock screen "None" never sends ACTION_USER_PRESENT: with no
-                // keyguard security, waking the screen IS user presence. Secure
-                // devices (incl. Extend Unlock) still wait for USER_PRESENT.
+                // keyguard security, waking the screen IS user presence. The
+                // same goes for a secure device woken inside its lock grace
+                // period ("lock N seconds after the screen times out"): no
+                // keyguard comes up, so none is dismissed, and without this
+                // the bubble would stay gone until the next real unlock. A
+                // secure device that wakes onto its keyguard (incl. Extend
+                // Unlock's) still waits for USER_PRESENT.
                 Intent.ACTION_SCREEN_ON ->
-                    if (!getSystemService(KeyguardManager::class.java).isDeviceSecure) {
+                    if (!getSystemService(KeyguardManager::class.java).isDeviceSecure ||
+                        !keyguardLocked()
+                    ) {
                         userPresent = true
                     }
                 Intent.ACTION_DREAMING_STARTED -> {
@@ -176,6 +277,42 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         }
     }
 
+    // The system asking transient UI to get out of the way. The overlay
+    // floats above every app and above the system's own dialogs, so unless it
+    // goes (or, still on its way, is called off) too:
+    //  - Home or Recents: the phone seems stuck on a frozen picture of the
+    //    app that was just left;
+    //  - an assistant: it opens underneath, and nothing appears to happen —
+    //    unless the assistant is this app, whose session takes over the
+    //    overlay's screenshot and closes it itself (see AssistSession.onShow);
+    //    closing it here first would lose that.
+    // (The assistant session's own window is closed by the system on the same
+    // signal. The power menu sends no such signal — see onAccessibilityEvent.)
+    private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val leaving = when (intent?.getStringExtra("reason")) {
+                "homekey", "recentapps" -> true
+                "assist" -> AssistInteractionService.instance == null
+                else -> false
+            }
+            if (leaving) yieldToSystemUi()
+        }
+    }
+
+    // A call coming in. Its notification appears beneath the overlay like
+    // everything else of the system's, so the phone would ring with nothing
+    // to see or answer. The ringing itself is observable, though — and needs
+    // no permission, unlike the telephony call state.
+    //
+    // Audible ringing only: with the ringer on vibrate or silent the system
+    // never enters this mode, and nothing else announces the call that this
+    // app could see without a phone permission or without listening in on
+    // notifications — neither of which it is going to ask for. There the
+    // overlay stays up, as it always did.
+    private val audioModeListener = AudioManager.OnModeChangedListener { mode ->
+        if (mode == AudioManager.MODE_RINGTONE) yieldToSystemUi()
+    }
+
     // Catches AOD/doze transitions, which don't reliably send ACTION_SCREEN_OFF.
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = Unit
@@ -184,8 +321,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             if (displayId != Display.DEFAULT_DISPLAY) return
             if (!isScreenInteractive()) userPresent = false
             // Rotation fires this too — keep an open overlay covering the
-            // whole (re-oriented) screen.
+            // whole (re-oriented) screen, and the bubble within it.
             resizeOverlayToDisplay()
+            keepBubbleOnScreen()
             refreshBubble()
         }
     }
@@ -197,6 +335,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         bubbleX = prefs.getInt(KEY_BUBBLE_X, UNSET)
         bubbleY = prefs.getInt(KEY_BUBBLE_Y, UNSET)
+        migrateBubbleOrigin(prefs)
         // The service is enabled while the user is unlocked and using the phone.
         val keyguard = getSystemService(KeyguardManager::class.java)
         userPresent = isScreenInteractive() && !keyguard.isKeyguardLocked
@@ -211,13 +350,87 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 addAction(Intent.ACTION_DREAMING_STOPPED)
             }
         )
+        // Its own registration, apart from the receiver above: only the
+        // system may send this broadcast, but from Android 14 it does not
+        // count as a "system broadcast" for registering without an exported
+        // flag — mixing it in there throws. Not exported is all it needs: the
+        // system's broadcasts are delivered regardless. (Below Android 13
+        // there is no such flag, and no such rule.)
+        @Suppress("DEPRECATION") // deprecated for sending; receiving is fine
+        val closeSystemDialogs = IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(closeSystemDialogsReceiver, closeSystemDialogs, RECEIVER_NOT_EXPORTED)
+        } else {
+            @SuppressLint("UnspecifiedRegisterReceiverFlag") // the flag is API 33
+            registerReceiver(closeSystemDialogsReceiver, closeSystemDialogs)
+        }
         displayManager.registerDisplayListener(displayListener, ui)
+        getSystemService(AudioManager::class.java)
+            .addOnModeChangedListener(mainExecutor, audioModeListener)
         refreshBubble()
+    }
+
+    /**
+     * The bubble's window used to be kept clear of the display cutout, which
+     * put its origin a cutout in from the display's corner; it is now laid out
+     * against the whole display (see addBubble). A spot saved by such a version
+     * is that much short of where the user left the bubble — add it back,
+     * once, so an update doesn't move the bubble.
+     *
+     * Measured on Android 12 and 15, with and without a cutout: the old origin
+     * was the cutout's safe inset on the left and top edges — nothing at all
+     * on a display without one, whatever the system bars — except that a
+     * cutout at the top counted as the whole status bar it sits in.
+     */
+    private fun migrateBubbleOrigin(prefs: SharedPreferences) {
+        if (prefs.getBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, false)) return
+        val editor = prefs.edit().putBoolean(KEY_BUBBLE_ORIGIN_DISPLAY, true)
+        if (bubbleX != UNSET && bubbleY != UNSET) {
+            val cutout = cutoutKeepOut(displayMetrics().windowInsets)
+            bubbleX += cutout.left
+            bubbleY += cutout.top
+            editor.putInt(KEY_BUBBLE_X, bubbleX).putInt(KEY_BUBBLE_Y, bubbleY)
+        }
+        editor.apply()
+    }
+
+    /**
+     * The strips of the display its cutout takes up, edge by edge. A cutout
+     * at the top counts as the whole status bar it sits in, which is how the
+     * system itself keeps a window clear of it.
+     */
+    private fun cutoutKeepOut(insets: WindowInsets): Insets {
+        val cutout = insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout())
+        if (cutout.top == 0) return cutout
+        val statusBar = insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars())
+        return Insets.of(cutout.left, maxOf(cutout.top, statusBar.top), cutout.right, cutout.bottom)
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The display listener can run before this process has been handed
+        // the new configuration, and then the display bounds it reads are
+        // still the old ones. Here they are current — do the same again.
+        resizeOverlayToDisplay()
+        if (bubbleView != null && newConfig.densityDpi != bubbleDensityDpi) {
+            // Display size changed: the bubble was sized in pixels when it
+            // was built. Build it again.
+            removeBubble()
+            refreshBubble()
+        } else {
+            keepBubbleOnScreen()
+        }
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
         runCatching { unregisterReceiver(screenReceiver) }
+        runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
         runCatching { displayManager.unregisterDisplayListener(displayListener) }
+        runCatching {
+            getSystemService(AudioManager::class.java).removeOnModeChangedListener(audioModeListener)
+        }
+        ui.removeCallbacks(settledRefresh)
+        dropNotice()
         teardownOverlay()
         removeBubble()
         instance = null
@@ -226,7 +439,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(screenReceiver) }
+        runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
         runCatching { displayManager.unregisterDisplayListener(displayListener) }
+        runCatching {
+            getSystemService(AudioManager::class.java).removeOnModeChangedListener(audioModeListener)
+        }
+        ui.removeCallbacks(settledRefresh)
+        dropNotice()
         teardownOverlay()
         removeBubble()
         instance = null
@@ -234,9 +453,19 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // The power menu opens beneath the crop overlay, where it can be
+        // neither seen nor used. No broadcast announces it, but its dialog's
+        // window appearing does arrive here.
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+            isPowerMenu(event)
+        ) {
+            yieldToSystemUi()
+        }
         // Window transitions (e.g. the keyguard appearing over the crop overlay)
         // re-evaluate — this is what catches the lock screen while still awake.
         refreshBubble()
+        ui.removeCallbacks(settledRefresh)
+        ui.postDelayed(settledRefresh, WINDOW_EVENT_SETTLE_MS)
     }
 
     override fun onInterrupt() = Unit
@@ -283,7 +512,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * the capture itself.
      */
     fun collectSnapBounds(): SnapBounds? {
-        val bounds = windowManager.currentWindowMetrics.bounds
+        val bounds = displayMetrics().bounds
         val display = Rect(0, 0, bounds.width(), bounds.height())
         val minSide = dp(4)
         val rects = HashSet<Rect>()
@@ -296,9 +525,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             // every app window in split-screen.
             if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
             if (window.displayId != Display.DEFAULT_DISPLAY) continue
+            // (No filter on our own package: this app's main screen is an
+            // application window like any other, and "Test capture" there is
+            // where snapping gets tried first. None of our overlays is on
+            // screen when this runs, and none is an application window.)
             val root = window.root ?: continue
-            // Belt and suspenders in case an OEM types our overlay oddly.
-            if (root.packageName == packageName) continue
             appWindows++
             budget = walkSnapNodes(root, 0, budget, display, minSide, rects)
             if (budget <= 0) break
@@ -315,7 +546,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     /** DFS over [node], collecting visible non-trivial bounds into [out].
-     *  Returns the remaining node budget. */
+     *  Returns the remaining node budget. Below [SNAP_MAX_DEPTH] a branch is
+     *  simply not descended into — its children are never fetched (each
+     *  fetch is IPC), and the walk carries on with the siblings. Only
+     *  running out of budget ends the whole walk. */
     private fun walkSnapNodes(
         node: AccessibilityNodeInfo,
         depth: Int,
@@ -324,8 +558,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         minSide: Int,
         out: MutableSet<Rect>
     ): Int {
+        if (budgetIn <= 0) return 0
         var budget = budgetIn - 1
-        if (budget < 0 || depth > SNAP_MAX_DEPTH) return 0
         if (node.isVisibleToUser) {
             val r = Rect()
             node.getBoundsInScreen(r)
@@ -336,6 +570,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 out.add(r)
             }
         }
+        if (depth >= SNAP_MAX_DEPTH) return budget
         for (i in 0 until node.childCount) {
             if (budget <= 0) return 0
             val child = node.getChild(i) ?: continue
@@ -354,6 +589,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         bubbleX = UNSET
         bubbleY = UNSET
     }
+
+    /**
+     * The whole display's size and insets. Deliberately not
+     * `currentWindowMetrics`, which describes "this context's window" — for a
+     * service that is whatever the process's configuration says, and nothing
+     * here is meant to depend on what windows the app's own activity is in.
+     */
+    private fun displayMetrics(): WindowMetrics = windowManager.maximumWindowMetrics
 
     /** True when the screen is awake — but beware: dreaming (AOD after a screen
      *  timeout) still counts as interactive, hence the separate [dreaming] flag. */
@@ -391,6 +634,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         val size = dp(52)
         val icon = ImageView(this).apply {
             setImageResource(R.drawable.ic_app_glyph)
+            contentDescription = getString(R.string.bubble_description)
             val pad = dp(13)
             setPadding(pad, pad, pad, pad)
             background = GradientDrawable().apply {
@@ -399,16 +643,6 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 setStroke(dp(1), Color.argb(90, 255, 255, 255))
             }
         }
-        val metrics = resources.displayMetrics
-        if (bubbleX == UNSET || bubbleY == UNSET) {
-            // First run: default to the right edge, a third of the way down.
-            bubbleX = metrics.widthPixels - size - dp(8)
-            bubbleY = metrics.heightPixels / 3
-        }
-        // Keep it on-screen (e.g. after a rotation or resolution change).
-        bubbleX = bubbleX.coerceIn(0, (metrics.widthPixels - size).coerceAtLeast(0))
-        bubbleY = bubbleY.coerceIn(0, (metrics.heightPixels - size).coerceAtLeast(0))
-
         val params = WindowManager.LayoutParams(
             size, size,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -417,19 +651,142 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = bubbleX
-            y = bubbleY
+            // Position the window against the whole display, not the part
+            // left over once system bars and cutouts are taken off. Otherwise
+            // its origin sits a status bar (or a side cutout) in from the
+            // corner, and a spot clamped to the display's size ends up that
+            // much beyond its edge.
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
+        placeBubbleOnScreen(params)
         attachBubbleTouch(icon, params)
         // The window token dies with the service: a refreshBubble posted just
         // before unbind can run after it, where addView throws BadTokenException.
         if (runCatching { windowManager.addView(icon, params) }.isFailure) return
         bubbleView = icon
+        bubbleDensityDpi = resources.configuration.densityDpi
+    }
+
+    /**
+     * A short message in a window of this service's own (see [notify]): the
+     * same dark pill as the crop tool's hint, near the bottom of the screen,
+     * gone again by itself. It takes no touches and no focus.
+     */
+    private fun showNotice(message: String) = ui.post {
+        dropNotice()
+        val display = displayMetrics().bounds
+        val notice = TextView(this).apply {
+            text = message
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.argb(235, 30, 30, 30))
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), Color.argb(90, 255, 255, 255))
+            }
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            maxWidth = display.width() - 2 * dp(24)
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(96)
+            // What a screen reader announces when the window appears.
+            title = message
+        }
+        // Guarded like addBubble: the window token dies with the service.
+        if (runCatching { windowManager.addView(notice, params) }.isFailure) return@post
+        noticeView = notice
+        ui.postDelayed(removeNotice, NOTICE_MS)
+    }
+
+    /** Take the notice down now, ahead of its timer. */
+    private fun dropNotice() {
+        ui.removeCallbacks(removeNotice)
+        removeNotice.run()
     }
 
     private fun removeBubble() {
         bubbleView?.let { runCatching { windowManager.removeView(it) } }
         bubbleView = null
+    }
+
+    /**
+     * Point [params] at the remembered bubble spot — choosing the default
+     * one if there is none — pulled inside the current display. Returns
+     * whether that changed them.
+     *
+     * Only the window is clamped. The remembered spot stays where the user
+     * put it (until they drag the bubble somewhere else), so a spot that
+     * doesn't fit one orientation is back in place in the other.
+     */
+    private fun placeBubbleOnScreen(params: WindowManager.LayoutParams): Boolean {
+        val metrics = displayMetrics()
+        val display = metrics.bounds
+        if (bubbleX == UNSET || bubbleY == UNSET) {
+            // No spot yet (first run, or reset from the app): default to the
+            // right edge, a third of the way down — the right edge of what's
+            // usable, that is: in landscape a navigation bar or a cutout can
+            // occupy that side, and a bubble parked on the bar would take its
+            // touches.
+            val occupied = metrics.windowInsets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+            )
+            bubbleX = display.width() - occupied.right - params.width - dp(8)
+            bubbleY = display.height() / 3
+        }
+        // Inside the display, and clear of its cutout: a spot that is fine
+        // in one orientation can otherwise come to lie under the camera in
+        // another.
+        val range = bubbleRange(params, metrics)
+        val x = bubbleX.coerceIn(range.left, range.right)
+        val y = bubbleY.coerceIn(range.top, range.bottom)
+        if (x == params.x && y == params.y) return false
+        params.x = x
+        params.y = y
+        return true
+    }
+
+    /**
+     * Where the bubble's top-left corner may be for all of it to lie inside
+     * the display and clear of its cutout: x from left to right, y from top
+     * to bottom, inclusive.
+     */
+    private fun bubbleRange(
+        params: WindowManager.LayoutParams,
+        metrics: WindowMetrics = displayMetrics()
+    ): Rect {
+        val display = metrics.bounds
+        val cutout = cutoutKeepOut(metrics.windowInsets)
+        return Rect(
+            cutout.left,
+            cutout.top,
+            (display.width() - cutout.right - params.width).coerceAtLeast(cutout.left),
+            (display.height() - cutout.bottom - params.height).coerceAtLeast(cutout.top)
+        )
+    }
+
+    /**
+     * Re-place a showing bubble after the display changed size (rotation,
+     * resolution). Its window is laid out with no limits, so nothing else
+     * stops a spot from the tall orientation lying beyond the edge of the
+     * wide one, out of reach.
+     */
+    private fun keepBubbleOnScreen() {
+        val view = bubbleView ?: return
+        val params = view.layoutParams as? WindowManager.LayoutParams ?: return
+        if (placeBubbleOnScreen(params)) {
+            runCatching { windowManager.updateViewLayout(view, params) }
+        }
     }
 
     private fun attachBubbleTouch(view: View, params: WindowManager.LayoutParams) {
@@ -439,31 +796,54 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         var originX = 0
         var originY = 0
         var moved = false
+        var range = Rect()
+        // The click is what assistive tech invokes (Switch Access and Voice
+        // Access only offer views with a click action); touch reaches it
+        // through performClick below.
+        view.setOnClickListener { triggerCapture() }
+        // Clickable, but never focusable — which a click listener makes a
+        // view by default. The bubble's window can't take key input anyway,
+        // yet a focusable view in it still grabs "default focus" whenever
+        // the window is created during keyboard navigation (D-pad, Tab, a
+        // remote), and the framework then paints its focus highlight over
+        // the view's square bounds: a grey box around the round bubble that
+        // stays, because a window that never gets input focus never hears
+        // that touch mode has resumed.
+        view.isFocusable = false
+        view.defaultFocusHighlightEnabled = false
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = event.rawX; startY = event.rawY
                     originX = params.x; originY = params.y
                     moved = false
+                    // A drag stays within what placeBubbleOnScreen allows:
+                    // dropped beyond it (the window has no limits of its
+                    // own), the bubble would sit half off the screen or on
+                    // the status bar until the next time it is put back —
+                    // and then jump.
+                    range = bubbleRange(params)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = (event.rawX - startX)
                     val dy = (event.rawY - startY)
                     if (abs(dx) > slop || abs(dy) > slop) moved = true
-                    params.x = originX + dx.toInt()
-                    params.y = originY + dy.toInt()
-                    bubbleX = params.x
-                    bubbleY = params.y
-                    runCatching { windowManager.updateViewLayout(v, params) }
+                    // Only a drag moves the bubble or its remembered spot. A
+                    // tap's jitter must not: while the window is clamped
+                    // (see placeBubbleOnScreen) it would overwrite the spot
+                    // the bubble is meant to return to.
+                    if (moved) {
+                        params.x = (originX + dx.toInt()).coerceIn(range.left, range.right)
+                        params.y = (originY + dy.toInt()).coerceIn(range.top, range.bottom)
+                        bubbleX = params.x
+                        bubbleY = params.y
+                        runCatching { windowManager.updateViewLayout(v, params) }
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!moved) {
-                        v.performClick(); triggerCapture()
-                    } else {
-                        persistBubblePosition()
-                    }
+                    if (!moved) v.performClick() else persistBubblePosition()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
@@ -535,13 +915,48 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * tracking the animation partway. Measured on a Pixel: full height for
      * ~465ms, then 204px. On a skin that lays the panel out differently the
      * predicate simply never goes false and the timeout takes over.
+     *
+     * "Big" means more than half the display in BOTH dimensions. Height alone
+     * also matches the navigation bar when it sits on a side edge (landscape
+     * with 3-button navigation) — a full-height system window that never goes
+     * away, which would hold every capture for the whole timeout.
      */
     private fun shadeExpanded(): Boolean {
-        val half = windowManager.currentWindowMetrics.bounds.height() / 2
+        val display = displayMetrics().bounds
+        val bounds = Rect()
         return windows.any { w ->
-            w.type == AccessibilityWindowInfo.TYPE_SYSTEM &&
-                Rect().also { w.getBoundsInScreen(it) }.height() > half
+            if (w.type != AccessibilityWindowInfo.TYPE_SYSTEM) return@any false
+            w.getBoundsInScreen(bounds)
+            bounds.height() > display.height() / 2 && bounds.width() > display.width() / 2
         }
+    }
+
+    /**
+     * Whether a window event is the power menu's dialog appearing.
+     *
+     * Up to Android 16 the dialog is a class of its own in SystemUI's
+     * globalactions package, and the event carries that name. From Android 17
+     * it is a plain SystemUIDialog like dozens of others, so the name says
+     * nothing. What the event still carries is the title SystemUI gives the
+     * menu for screen readers — the system's own "Phone options" string,
+     * which can be looked up in whatever language the device is set to.
+     *
+     * The event is all there is to go by: with the crop overlay covering it,
+     * the menu's window is left out of the window list, and nothing in it
+     * can be looked at. (A skin that names and titles its power menu
+     * differently just keeps the overlay up, as before.)
+     */
+    private fun isPowerMenu(event: AccessibilityEvent): Boolean {
+        if (event.className?.contains("globalactions", ignoreCase = true) == true) return true
+        if (event.packageName?.toString() != SYSTEM_UI_PACKAGE) return false
+        val title = powerMenuTitle() ?: return false
+        return event.text.any { it?.toString() == title }
+    }
+
+    private fun powerMenuTitle(): String? {
+        val system = Resources.getSystem()
+        val id = system.getIdentifier("global_actions", "string", "android")
+        return if (id != 0) system.getString(id) else null
     }
 
     /**
@@ -583,7 +998,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (capturing) return null
         capturing = true
         removeBubble()
-        return ++bubbleCaptureGen
+        dropNotice() // like the bubble, it would be in the picture
+        pendingCaptureGen = ++bubbleCaptureGen
+        return pendingCaptureGen
     }
 
     /** Take the shot and present the crop overlay, if [gen] still owns the
@@ -602,9 +1019,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     val snap = if (Prefs.isSnapEnabled(this)) collectSnapBounds() else null
                     presentOverlay(bitmap, snap)
                 } else {
-                    Toast.makeText(
-                        this, R.string.error_capture_failed, Toast.LENGTH_LONG
-                    ).show()
+                    showNotice(getString(R.string.error_capture_failed))
                     abandonCapture()
                 }
             }
@@ -614,8 +1029,34 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** Give up an in-flight capture and release the latch, so a screen that
      *  locked mid-capture doesn't leave the tool wedged shut. */
     private fun abandonCapture() {
+        pendingCaptureGen = NO_CAPTURE
         capturing = false
         refreshBubble()
+    }
+
+    /**
+     * Call off a bubble/tile capture that has claimed the latch but not put
+     * its overlay up yet — the shade may still be collapsing, the screenshot
+     * still on its way. Whatever is in flight for it finds itself superseded,
+     * exactly as when the assistant takes over. No-op when there is no such
+     * capture, including when the latch is the assistant's.
+     */
+    private fun cancelPendingCapture() {
+        if (pendingCaptureGen != bubbleCaptureGen) return
+        bubbleCaptureGen++
+        abandonCapture()
+    }
+
+    /**
+     * Something of the system's wants the screen: the user went Home or to
+     * Recents, or opened the power menu or an assistant, or a call is coming
+     * in. Close the crop
+     * overlay — or, if it has not appeared yet, see that it doesn't: opening
+     * a second later, it would land on top of where the user has just gone.
+     */
+    private fun yieldToSystemUi() {
+        if (overlayView != null) dismissOverlay() else cancelPendingCapture()
+        onYieldToSystemUi?.invoke()
     }
 
     /**
@@ -629,7 +1070,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             // capture still in flight — so the assistant never stacks on top
             // of it: only one tool is ever open.
             bubbleCaptureGen++
-            ui.post { teardownOverlay(); removeBubble() }
+            pendingCaptureGen = NO_CAPTURE
+            ui.post { teardownOverlay(); removeBubble(); dropNotice() }
         } else {
             refreshBubble()
         }
@@ -638,28 +1080,40 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** True if the floating bubble is currently on screen. */
     fun isBubbleShowing(): Boolean = bubbleView != null
 
+    /** True if a notice (see [notify]) is currently on screen. */
+    fun isNoticeShowing(): Boolean = noticeView != null
+
     /** The clean screenshot behind the open bubble crop overlay (no bubble in
      *  it), for the assistant to reuse instead of a system shot that would
      *  include the overlay. Null if no bubble overlay is open. */
     fun openOverlayScreenshot(): Bitmap? = if (overlayView != null) overlayBitmap else null
 
+    /** The snap bounds that go with [openOverlayScreenshot] — collected when
+     *  that screenshot was taken, so they describe what is in the picture
+     *  rather than whatever the app underneath has changed to since. */
+    fun openOverlaySnapBounds(): SnapBounds? = if (overlayView != null) overlaySnap else null
+
     private fun presentOverlay(bitmap: Bitmap, snap: SnapBounds?) {
         ShareHelper.cleanupCache(this)
         teardownOverlay()
+        pendingCaptureGen = NO_CAPTURE // it is being presented now
         overlayGen = bubbleCaptureGen
         overlayBitmap = bitmap
+        overlaySnap = snap
 
+        // (The screen itself takes no keyboard focus: Back reaches it without
+        // — see CropScreen.dispatchKeyEvent — and a focused root would keep
+        // arrow keys from ever reaching its buttons.)
         val screen = CropScreen(this)
-        screen.isFocusableInTouchMode = true
         screen.callbacks = object : CropScreen.Callbacks {
             override fun onDeliver(share: Boolean, rect: Rect?) {
                 val ok = try {
                     ShareHelper.deliver(this@ScreenshotAccessibilityService, bitmap, rect, share)
+                } catch (e: IOException) {
+                    showNotice(getString(R.string.error_save_failed))
+                    true
                 } catch (e: Exception) {
-                    Toast.makeText(
-                        this@ScreenshotAccessibilityService,
-                        R.string.error_capture_failed, Toast.LENGTH_LONG
-                    ).show()
+                    showNotice(getString(R.string.error_capture_failed))
                     true
                 }
                 if (ok) dismissOverlay()
@@ -668,35 +1122,39 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             override fun onCancel() = dismissOverlay()
         }
         // Cancel on the back key.
-        screen.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                dismissOverlay(); true
-            } else false
-        }
+        screen.onBackKey = { dismissOverlay() }
 
-        // Size to the whole physical display so the dim covers the status and
-        // navigation bars too — not just the app content area.
-        val bounds = windowManager.currentWindowMetrics.bounds
+        val frame = overlayFrame()
+        overlayDisplay = displayState()
         val params = WindowManager.LayoutParams(
-            bounds.width(),
-            bounds.height(),
+            frame.width(),
+            frame.height(),
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            // Not touch-modal: a window that takes key input otherwise
+            // swallows touches outside its own bounds too — and the point of
+            // stopping short of the navigation bar is that taps there reach
+            // the bar.
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
+            x = frame.left
+            y = frame.top
+            // Positioned against the whole display, like the bubble.
+            fitInsetsTypes = 0
             layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
+        screen.setDisplayFrame(displayFrameWithin(frame))
         // Guarded like addBubble: the window token dies with the service, and
         // an unguarded throw here would strand `capturing` at true with no
         // overlay for refreshBubble to tear down — wedging every future
         // capture, from every path, until the service is toggled.
         if (runCatching { windowManager.addView(screen, params) }.isFailure) {
             overlayBitmap = null
+            overlaySnap = null
             // Restore the "no overlay is open" invariant overlayGen documents —
             // it was claimed just above, and leaving it pointing at the live
             // generation would let a future overlayGen-only check clear a latch
@@ -706,19 +1164,105 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             return
         }
         overlayView = screen
+        // onBackKey only sees Back where the platform still
+        // sends KEYCODE_BACK to the view tree. Once predictive back is on for
+        // the app — the default from Android 16 at this targetSdk — it no
+        // longer does, and Back reaches a window only through a callback like
+        // this one. (Where predictive back is off, the dispatcher ignores the
+        // registration and onBackKey does the job.) The dispatcher
+        // belongs to the window, so it goes away with the overlay.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            screen.findOnBackInvokedDispatcher()?.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT
+            ) { dismissOverlay() }
+        }
         screen.setBitmap(bitmap, snap)
-        screen.requestFocus()
     }
 
     /** Re-fit an open crop overlay to the current display bounds (rotation). */
     private fun resizeOverlayToDisplay() {
         val view = overlayView ?: return
-        val bounds = windowManager.currentWindowMetrics.bounds
         val params = view.layoutParams as? WindowManager.LayoutParams ?: return
-        if (params.width == bounds.width() && params.height == bounds.height()) return
-        params.width = bounds.width()
-        params.height = bounds.height()
+        val display = displayState()
+        if (display == overlayDisplay) return // see overlayDisplay
+        overlayDisplay = display
+        val frame = overlayFrame()
+        // The display can change under an unchanged frame (a flip between
+        // the two landscapes moves nothing but the bar's side), so always
+        // pass it on; the view ignores a repeat.
+        view.setDisplayFrame(displayFrameWithin(frame))
+        if (params.x == frame.left && params.y == frame.top &&
+            params.width == frame.width() && params.height == frame.height()
+        ) {
+            return
+        }
+        params.x = frame.left
+        params.y = frame.top
+        params.width = frame.width()
+        params.height = frame.height()
         runCatching { windowManager.updateViewLayout(view, params) }
+    }
+
+    /**
+     * Where the crop overlay's window goes, in display coordinates: the whole
+     * display, so the dim covers the status bar too — except a navigation bar
+     * with buttons on it (3-button navigation). An accessibility overlay sits
+     * above that bar; covering it would leave Back, Home and Recents showing
+     * through the frozen picture but dead to the touch. The gesture bar is
+     * no such obstacle (its swipes are read above every window) and stays
+     * covered — as does a large screen's taskbar, see below.
+     */
+    private fun overlayFrame(): Rect {
+        val metrics = displayMetrics()
+        val display = metrics.bounds
+        // On a tablet or an unfolded foldable the tappable strip is a
+        // taskbar: app icons as well as navigation buttons. Leaving that
+        // free would let an app be launched underneath the frozen picture
+        // with nothing to close it, so there the display is covered whole.
+        // (Measured on the display itself — the configuration's "smallest
+        // width" is the app's own window's when that is in split-screen.)
+        val smallestWidthDp = minOf(display.width(), display.height()) / resources.displayMetrics.density
+        if (smallestWidthDp >= LARGE_SCREEN_MIN_WIDTH_DP) {
+            return Rect(0, 0, display.width(), display.height())
+        }
+        // As currently shown: a bar an immersive app has hidden is in nobody's
+        // way, and the display is covered whole.
+        val bar = metrics.windowInsets.getInsets(WindowInsets.Type.navigationBars())
+        // "Tappable" is what tells a button bar from the gesture bar.
+        val tappable = metrics.windowInsets.getInsets(WindowInsets.Type.tappableElement())
+        return Rect(
+            minOf(bar.left, tappable.left),
+            0,
+            display.width() - minOf(bar.right, tappable.right),
+            display.height() - minOf(bar.bottom, tappable.bottom)
+        )
+    }
+
+    private fun displayState(): DisplayState {
+        val metrics = displayMetrics()
+        // Where the bars are, whether or not they are showing. Asked of the
+        // system afresh each time — unlike the display's rotation, which a
+        // service reads from its process configuration, and that can still
+        // be the old one when a display change is first reported (and for a
+        // flip straight from one landscape to the other, nothing announces
+        // its arrival later).
+        val insets = metrics.windowInsets
+        return DisplayState(
+            metrics.bounds.width(),
+            metrics.bounds.height(),
+            insets.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars()),
+            insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout())
+        )
+    }
+
+    /** The whole display as seen from a window at [frame] — what the crop
+     *  view lays the screenshot out against. */
+    private fun displayFrameWithin(frame: Rect): RectF {
+        val display = displayMetrics().bounds
+        return RectF(
+            -frame.left.toFloat(), -frame.top.toFloat(),
+            (display.width() - frame.left).toFloat(), (display.height() - frame.top).toFloat()
+        )
     }
 
     private fun dismissOverlay() {
@@ -731,7 +1275,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun teardownOverlay() {
         overlayView?.let { runCatching { windowManager.removeView(it) } }
         overlayView = null
+        overlayDisplay = null
         overlayBitmap = null
+        overlaySnap = null
     }
 
     private fun dp(value: Int): Int =

@@ -1,21 +1,26 @@
 package eu.woshicado.circletoshare.assist
 
+import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
+import android.os.LocaleList
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.service.voice.VoiceInteractionSession
 import android.view.Display
 import android.view.View
-import android.widget.Toast
+import android.view.Window
+import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
@@ -23,6 +28,7 @@ import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.share.ShareHelper
+import java.io.IOException
 
 /**
  * Full-screen overlay shown when the assistant gesture fires: displays the
@@ -40,6 +46,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     // captures, accessibility callbacks) can tell it has been superseded and
     // must not deliver a stale screenshot into a later show.
     private var showGeneration = 0
+    // The show (by generation) that has an accessibility capture out, if any.
+    private var captureInFlightFor = NO_SHOW
     // System shot set aside on the bubble path — used only if the clean
     // re-capture fails (it shows the bubble, which beats failing outright).
     private var fallbackSystemShot: Bitmap? = null
@@ -95,6 +103,13 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         override fun onReceive(context: Context?, intent: Intent?) = hide()
     }
 
+    // A call coming in: its notification appears beneath this window, so the
+    // phone would ring with nothing to see or answer. (Audible ringing only —
+    // see the same listener in ScreenshotAccessibilityService.)
+    private val audioModeListener = AudioManager.OnModeChangedListener { mode ->
+        if (mode == AudioManager.MODE_RINGTONE) hide()
+    }
+
     // Catches AOD/doze transitions, which don't reliably send ACTION_SCREEN_OFF.
     private val displayListener = object : DisplayManager.DisplayListener {
         override fun onDisplayAdded(displayId: Int) = Unit
@@ -105,14 +120,92 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
 
-    override fun onCreateContentView(): View {
-        cropScreen = CropScreen(context).apply {
+    // What a built CropScreen's sizes and texts depend on. The session — and
+    // its content view with it — lives on between shows, through changes of
+    // font size, display size and language that would recreate an activity;
+    // nothing recreates this. A view's sizes are fixed in pixels, and its
+    // texts chosen, when it is built, so it is rebuilt when these differ.
+    private data class UiConfig(val fontScale: Float, val densityDpi: Int, val locales: LocaleList)
+
+    private var cropScreenBuiltFor: UiConfig? = null
+
+    private fun uiConfig(): UiConfig = context.resources.configuration.let {
+        UiConfig(it.fontScale, it.densityDpi, it.locales)
+    }
+
+    private fun buildCropScreen(): CropScreen {
+        cropScreenBuiltFor = uiConfig()
+        return CropScreen(context).apply {
             callbacks = object : CropScreen.Callbacks {
                 override fun onDeliver(share: Boolean, rect: Rect?) = deliver(share, rect)
                 override fun onCancel() = hide()
             }
         }
+    }
+
+    override fun onCreateContentView(): View {
+        cropScreen = buildCropScreen()
         return cropScreen
+    }
+
+    // True for a show that found the lock screen up: held back, window and
+    // all, until the lock screen is gone — or, if it stays, turned down.
+    private var refusedShow = false
+
+    // True while such a show is waiting to see whether the lock screen goes.
+    private var awaitingUnlock = false
+
+    // True once a show has failed and its window is only up to say so.
+    private var messageShowing = false
+
+    override fun onPrepareShow(args: Bundle?, showFlags: Int) {
+        super.onPrepareShow(args, showFlags)
+        // The rule the bubble and the tile live by: never shoot, and never
+        // present the crop tool, over a lock screen. The platform closes a
+        // session when the lock screen appears over it, but one invoked while
+        // the lock screen is already up would open as usual — over a picture
+        // of the lock screen, with a Share that goes nowhere until the next
+        // unlock. Keep the window from appearing at all (onShow says why).
+        if (!visible && !awaitingUnlock) {
+            refusedShow = keyguardLocked()
+            setUiEnabled(!refusedShow)
+        }
+    }
+
+    private fun keyguardLocked(): Boolean =
+        context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+
+    /**
+     * A show that found the lock screen up. It may be on its way out: a
+     * fingerprint reader in the power button unlocks during the very press
+     * that then, held, calls the assistant — and the lock screen still counts
+     * as up while it animates away (the tile waits out the same lag after
+     * its unlock prompt). So give it that long to go, and only then say no.
+     */
+    private fun awaitUnlockThenOpen() {
+        awaitingUnlock = true
+        val gen = showGeneration
+        val deadline = SystemClock.uptimeMillis() + animationSettleMs(
+            context, baseMs = KEYGUARD_EXIT_GRACE_MS, offMs = KEYGUARD_EXIT_GRACE_OFF_MS
+        ).coerceAtMost(KEYGUARD_EXIT_GRACE_MAX_MS)
+        val check = object : Runnable {
+            override fun run() {
+                if (gen != showGeneration || !awaitingUnlock) return // hidden meanwhile
+                if (!keyguardLocked()) {
+                    awaitingUnlock = false
+                    refusedShow = false
+                    // Brings up the window this show was denied so far.
+                    setUiEnabled(true)
+                    openTool(afterUnlock = true)
+                } else if (SystemClock.uptimeMillis() >= deadline) {
+                    ScreenshotAccessibilityService.notify(context, R.string.error_tile_locked)
+                    hide()
+                } else {
+                    ui.postDelayed(this, KEYGUARD_POLL_MS)
+                }
+            }
+        }
+        ui.postDelayed(check, KEYGUARD_POLL_MS)
     }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
@@ -122,6 +215,23 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // or each activation would bake another layer of dim/crop UI into the
         // frozen image.
         if (visible) return
+        if (refusedShow) {
+            if (!awaitingUnlock) awaitUnlockThenOpen()
+            return
+        }
+        openTool(afterUnlock = false)
+    }
+
+    /**
+     * Open the crop tool for this show. [afterUnlock]: the show began on a
+     * lock screen that has since gone — whatever screenshot the system took
+     * for it is a picture of that lock screen, and must not be used.
+     */
+    private fun openTool(afterUnlock: Boolean) {
+        if (cropScreenBuiltFor != uiConfig()) {
+            cropScreen = buildCropScreen()
+            setContentView(cropScreen)
+        }
         visible = true
         showUptime = SystemClock.uptimeMillis()
         // Grab the snap bounds NOW — before the accessibility framework
@@ -143,17 +253,45 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             )
             context.getSystemService(DisplayManager::class.java)
                 .registerDisplayListener(displayListener, ui)
+            context.getSystemService(AudioManager::class.java)
+                .addOnModeChangedListener(context.mainExecutor, audioModeListener)
+            // The power menu opens beneath this window too. Only the
+            // accessibility service can see it appear; if it is running, it
+            // tells us.
+            ScreenshotAccessibilityService.onYieldToSystemUi = { hide() }
         }
-        handledSystemShot = false
-        window?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        // After an unlock the system's shot for this show is one of the lock
+        // screen. It has usually come and gone by now (dropped, the show not
+        // being visible yet) — but should it still be on its way, it is not
+        // to be kept as a fallback either.
+        handledSystemShot = afterUnlock
+        window?.window?.let { w ->
+            WindowCompat.setDecorFitsSystemWindows(w, false)
+            clearSystemBarBackgrounds(w)
+        }
         screenshot = null
         awaitingOwnCapture = false
         ShareHelper.cleanupCache(context)
 
         val service = ScreenshotAccessibilityService.instance
+        if (afterUnlock && service == null) {
+            // Nothing here can take a picture of what the unlock revealed.
+            // Asking again, now that the device is unlocked, will get one
+            // from the system — which is what to tell them, not "unlock
+            // first": they just have.
+            fail(R.string.error_called_while_unlocking)
+            return
+        }
         // Grab the clean shot / bubble state BEFORE setCapturing tears them down.
         val reuse = service?.openOverlayScreenshot()
-        val bubbleWasShowing = service?.isBubbleShowing() == true
+        // Its snap bounds with it: the ones collected just now describe the
+        // app as it is at this moment, which the frozen picture may no longer
+        // match (moving content, or a rotation since).
+        if (reuse != null) pendingSnap = service.openOverlaySnapBounds()
+        // (A notice counts like the bubble: "Unlock the device first", then
+        // unlocking and asking again, finds it still up.)
+        val bubbleWasShowing =
+            service?.isBubbleShowing() == true || service?.isNoticeShowing() == true
         // A tool is now open — hide the bubble and close any bubble-path overlay
         // so nothing lingers over or stacks on top of this one.
         service?.setCapturing(true)
@@ -165,10 +303,12 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
                 android.util.Log.d("CircleToShare", "assist source: bubble-reuse")
                 onScreenshotReady(reuse)
             }
-            // The bubble was on screen (implies service != null): the system
-            // shot would contain it, so re-capture cleanly now that it's gone
-            // (and the zoom animation has settled).
-            bubbleWasShowing -> {
+            // The bubble (or a notice) was on screen (implies service != null):
+            // the system shot would contain it, so re-capture cleanly now that it's gone
+            // (and the zoom animation has settled). Likewise after an unlock,
+            // where the system's shot — long delivered, and dropped — showed
+            // the lock screen.
+            bubbleWasShowing || afterUnlock -> {
                 awaitingOwnCapture = true
                 scheduleSettledCapture()
             }
@@ -179,7 +319,47 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         }
     }
 
+    /**
+     * The frozen screenshot already shows the system bars, so the session
+     * window must add nothing over them. The platform's session theme asks
+     * for "translucent" bars, which makes the system paint its own scrim on
+     * the navigation strip: a visible band the bubble path's overlay doesn't
+     * have, and — because our fallback capture is taken with this window
+     * already up — one that gets baked into the screenshot as well.
+     */
+    @Suppress("DEPRECATION") // still what controls the bars below API 35
+    private fun clearSystemBarBackgrounds(w: Window) {
+        // Nor may it be kept out of the display cutout: in landscape that
+        // makes the window narrower than the display, and the full-display
+        // screenshot is then shown shrunk and shifted instead of exactly over
+        // what it is a picture of.
+        w.attributes = w.attributes.apply {
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        w.clearFlags(
+            WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS or
+                WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION
+        )
+        w.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        w.statusBarColor = Color.TRANSPARENT
+        w.navigationBarColor = Color.TRANSPARENT
+        w.isStatusBarContrastEnforced = false
+        w.isNavigationBarContrastEnforced = false
+    }
+
     override fun onHandleScreenshot(systemShot: Bitmap?) {
+        // The shot is delivered separately from onShow and can land after the
+        // session was hidden again (screen off, a quick Back). Loading it
+        // then would leave a hidden session holding a capture that the next
+        // show flashes before its own arrives — the very thing onHide's
+        // clear() exists to prevent.
+        if (!visible) return
+        // Nor once this show has given up and is only saying why (see fail):
+        // a shot that turned up now would bring the tool back just in time
+        // for the message's timer to close it — and one from a re-invocation
+        // would be a picture of the message.
+        if (messageShowing) return
         // A re-invocation blocked by the visible guard still delivers a system
         // shot — of our own overlay. Only the first delivery per show is clean.
         if (handledSystemShot) return
@@ -204,12 +384,27 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     }
 
     override fun onHide() {
+        if (refusedShow) {
+            // Nothing was opened, so there is nothing to close — and the
+            // capture latch released below was never this show's to release.
+            refusedShow = false
+            awaitingUnlock = false
+            showGeneration++ // ends a wait for the unlock, if one is running
+            super.onHide()
+            return
+        }
         visible = false
+        messageShowing = false
         if (watchingScreen) {
             watchingScreen = false
             runCatching { context.unregisterReceiver(screenOffReceiver) }
             context.getSystemService(DisplayManager::class.java)
                 .unregisterDisplayListener(displayListener)
+            runCatching {
+                context.getSystemService(AudioManager::class.java)
+                    .removeOnModeChangedListener(audioModeListener)
+            }
+            ScreenshotAccessibilityService.onYieldToSystemUi = null
         }
         showGeneration++
         ui.removeCallbacks(screenshotTimeout)
@@ -235,37 +430,57 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     private fun captureViaAccessibility() {
         val service = ScreenshotAccessibilityService.instance
         if (service == null) {
-            captureFailed(context.getString(R.string.error_no_capture))
+            captureFailed(R.string.error_no_capture)
             return
         }
         val gen = showGeneration
+        // One capture per show at a time. A second request can come in while
+        // the first is still out (the timeout's, then one for a late "no
+        // screenshot" from the system); started, it would only run into the
+        // platform's screenshot rate limit and report a failure for a show
+        // whose capture is about to succeed.
+        if (captureInFlightFor == gen) return
+        captureInFlightFor = gen
         service.capture { bitmap ->
             ui.post {
+                if (captureInFlightFor == gen) captureInFlightFor = NO_SHOW
                 if (gen != showGeneration) return@post // session was hidden since
                 if (bitmap != null) {
                     android.util.Log.d("CircleToShare", "assist source: accessibility")
                     onScreenshotReady(bitmap)
                 } else {
-                    captureFailed(context.getString(R.string.error_capture_failed))
+                    captureFailed(R.string.error_capture_failed)
                 }
             }
         }
     }
 
-    private fun captureFailed(message: String) {
+    private fun captureFailed(messageRes: Int) {
+        // A failure only matters while the show is still waiting for its
+        // screenshot.
+        if (screenshot != null) return
         val fallback = fallbackSystemShot
         fallbackSystemShot = null
-        if (fallback != null) onScreenshotReady(fallback) else fail(message)
+        if (fallback != null) onScreenshotReady(fallback) else fail(messageRes)
     }
 
     private fun onScreenshotReady(bitmap: Bitmap) {
         if (screenshot != null) return
         awaitingOwnCapture = false
         fallbackSystemShot = null
-        val software = if (bitmap.config == Bitmap.Config.HARDWARE) {
-            bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        // copy() reports failure (out of memory) by returning null or throwing.
+        val software: Bitmap? = if (bitmap.config == Bitmap.Config.HARDWARE) {
+            try {
+                bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            } catch (t: Throwable) {
+                null
+            }
         } else {
             bitmap
+        }
+        if (software == null) {
+            fail(R.string.error_capture_failed)
+            return
         }
         screenshot = software
         android.util.Log.d(
@@ -280,15 +495,46 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         val bitmap = screenshot ?: return
         val delivered = try {
             ShareHelper.deliver(context, bitmap, rect, share)
+        } catch (e: IOException) {
+            fail(R.string.error_save_failed)
+            return
         } catch (e: Exception) {
-            fail(context.getString(R.string.error_capture_failed))
+            fail(R.string.error_capture_failed)
             return
         }
         if (delivered) hide()
     }
 
-    private fun fail(message: String) {
-        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        hide()
+    private fun fail(messageRes: Int) {
+        if (ScreenshotAccessibilityService.instance != null) {
+            ScreenshotAccessibilityService.notify(context, messageRes)
+            hide()
+            return
+        }
+        // No service to show the message, and a toast from here is one the
+        // system drops (see notify). But this window is up: say it here, in
+        // place of the tool, and close after a reading's time — or at a
+        // touch, which the screen passes on as a cancel.
+        if (messageShowing) return
+        messageShowing = true
+        cropScreen.showMessage(context.getString(messageRes))
+        val gen = showGeneration
+        ui.postDelayed({ if (gen == showGeneration && visible) hide() }, MESSAGE_MS)
+    }
+
+    private companion object {
+        const val NO_SHOW = -1
+
+        // How long a message shown in place of the tool stays up.
+        const val MESSAGE_MS = 5000L
+
+        // How long a lock screen that was up at the show gets to finish
+        // going away (the tile's values for the same wait; scaled with the
+        // system's animation speed like every other wait here), and how
+        // often to look.
+        const val KEYGUARD_EXIT_GRACE_MS = 400f
+        const val KEYGUARD_EXIT_GRACE_OFF_MS = 100L
+        const val KEYGUARD_EXIT_GRACE_MAX_MS = 1500L
+        const val KEYGUARD_POLL_MS = 50L
     }
 }

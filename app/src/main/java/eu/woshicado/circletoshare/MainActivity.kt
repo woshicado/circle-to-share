@@ -7,12 +7,18 @@ import android.content.ComponentName
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.database.ContentObserver
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
 import android.text.Editable
 import android.text.InputFilter
+import android.text.SpannableString
+import android.text.Spanned
 import android.text.TextWatcher
+import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -24,7 +30,9 @@ import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
@@ -32,26 +40,51 @@ import eu.woshicado.circletoshare.tile.CaptureTileService
 
 class MainActivity : AppCompatActivity() {
 
-    // True while updateStatus() writes the switches, so the listeners can tell
-    // programmatic sync from real input. (Checking view.isPressed instead would
-    // also drop toggles made via TalkBack or a keyboard.)
-    private var syncingSwitches = false
+    // True while the switches are being written by anything but the user, so
+    // the listeners can tell programmatic sync from real input. (Checking
+    // view.isPressed instead would also drop toggles made via TalkBack or a
+    // keyboard.)
+    //
+    // It starts out true, and stays so until the first updateStatus() has
+    // run: when the activity is recreated (rotation, dark mode, font size)
+    // the framework restores each switch's saved state between onCreate and
+    // onResume, and that calls the listeners exactly like a tap would. For
+    // the bubble switch a phantom "turned on" resets the bubble's position.
+    private var syncingSwitches = true
+
+    // Tells the status lines when either setup step changes in Settings
+    // while this screen is in view (see onStart).
+    private val setupObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = updateStatus()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Android 15+ lays the activity out edge to edge whether we ask or
+        // not (targetSdk 36); ask for the same below that, so every version
+        // takes the one code path and looks alike. The theme makes the bars
+        // transparent to match.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.activity_main)
 
-        // The activity is edge-to-edge (targetSdk 36), so adjustResize alone
-        // does nothing — the keyboard would cover the hex field at the bottom
-        // with no way to scroll it into view. Inset the scroll container by
-        // the IME height so the focused field scrolls above the keyboard.
+        // Edge to edge, nothing keeps the content clear of the status bar,
+        // the navigation bar or a display cutout unless we inset it
+        // ourselves — and adjustResize alone does
+        // nothing, so the keyboard would cover the hex field at the bottom
+        // with no way to scroll it into view. Pad the scroll container by the
+        // bars (and by the IME when it is taller) so content rests and clips
+        // inside the safe area and the focused field can scroll above the
+        // keyboard.
         val scroll = findViewById<ScrollView>(R.id.root_scroll)
         // Somewhere for focus to land when the hex field clears it on Done —
         // clearFocus() on the window's only focusable bounces right back.
         scroll.isFocusableInTouchMode = true
         ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
+            val bars = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+            )
             val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, ime.bottom)
+            v.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
             // Padding makes the field reachable, but doesn't move it — and
             // requestRectangleOnScreen can't help, because ScrollView's
             // visibility math ignores its own bottom padding and considers
@@ -174,16 +207,47 @@ class MainActivity : AppCompatActivity() {
         showStored()
 
         // Keep the XML LengthFilter; android:digits can't be used for the
-        // hex restriction (see the layout comment), so append our own filter.
-        input.filters = input.filters + InputFilter { source, start, end, _, _, _ ->
-            val kept = buildString {
+        // hex restriction (see the layout comment), so add our own filter —
+        // ahead of it: filters run in order, and pasted text has to lose the
+        // characters that don't count before it is cut to length, not after
+        // (" #FFCA28" would otherwise come out one digit short).
+        val hexOnly = InputFilter { source, start, end, _, _, _ ->
+            // ('0'..'9', not isDigit(): that one takes the digits of every
+            // script, which a hex code doesn't.)
+            fun allowed(c: Char) = c == '#' || c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
+            if ((start until end).all { allowed(source[it]) }) {
+                null
+            } else {
+                // The others cut out — and the keyboard's composing spans
+                // carried over to what is left: they mark the word being
+                // typed, and without them the next keystroke adds the word a
+                // second time instead of replacing it. (By hand, because the
+                // copying constructors skip exactly those: NoCopySpan. And
+                // only those: styling pasted along with text has no business
+                // here, and a paragraph span set down where the line breaks
+                // used to be throws.)
+                val kept = StringBuilder()
+                // keptBefore[i]: how many kept characters precede source[start + i].
+                val keptBefore = IntArray(end - start + 1)
                 for (i in start until end) {
-                    val c = source[i]
-                    if (c == '#' || c.isDigit() || c in 'a'..'f' || c in 'A'..'F') append(c)
+                    keptBefore[i - start] = kept.length
+                    if (allowed(source[i])) kept.append(source[i])
                 }
+                keptBefore[end - start] = kept.length
+                val filtered = SpannableString(kept)
+                if (source is Spanned) {
+                    for (span in source.getSpans(start, end, Any::class.java)) {
+                        val flags = source.getSpanFlags(span)
+                        if (flags and Spanned.SPAN_COMPOSING == 0) continue
+                        val from = keptBefore[source.getSpanStart(span).coerceIn(start, end) - start]
+                        val to = keptBefore[source.getSpanEnd(span).coerceIn(start, end) - start]
+                        if (from < to) filtered.setSpan(span, from, to, flags)
+                    }
+                }
+                filtered
             }
-            if (kept.length == end - start) null else kept
         }
+        input.filters = arrayOf(hexOnly) + input.filters
 
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) = Unit
@@ -198,8 +262,12 @@ class MainActivity : AppCompatActivity() {
 
         // IME_NULL is what a hardware Enter arrives as — the soft keyboard's
         // Done button sends IME_ACTION_DONE.
-        input.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE ||
+        input.setOnEditorActionListener { _, actionId, event ->
+            if (event?.action == KeyEvent.ACTION_UP) {
+                // A hardware Enter is offered twice, going down and coming
+                // up. It was dealt with going down.
+                true
+            } else if (actionId == EditorInfo.IME_ACTION_DONE ||
                 actionId == EditorInfo.IME_NULL
             ) {
                 val stored = Prefs.setQrColorHex(this, input.text.toString())
@@ -220,15 +288,41 @@ class MainActivity : AppCompatActivity() {
         input.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) showStored() }
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Both setup steps are done in Settings, which may well be open
+        // beside this screen (split-screen, a foldable, a desktop window)
+        // rather than over it — and then nothing resumes this activity when
+        // they change. Watch the settings themselves while visible.
+        for (name in WATCHED_SETTINGS) {
+            contentResolver.registerContentObserver(
+                Settings.Secure.getUriFor(name), false, setupObserver
+            )
+        }
+    }
+
+    override fun onStop() {
+        contentResolver.unregisterContentObserver(setupObserver)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         updateStatus()
     }
 
+    override fun onTopResumedActivityChanged(isTopResumedActivity: Boolean) {
+        super.onTopResumedActivityChanged(isTopResumedActivity)
+        // Coming back from the window beside this one: catch whatever the
+        // observer has no way of seeing (the bubble switch, say, after the
+        // service was turned on over there).
+        if (isTopResumedActivity) updateStatus()
+    }
+
     private fun updateStatus() {
         val roleManager = getSystemService(RoleManager::class.java)
         val isAssistant = roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true ||
-            Settings.Secure.getString(contentResolver, "voice_interaction_service")
+            Settings.Secure.getString(contentResolver, VOICE_INTERACTION_SERVICE)
                 ?.contains(packageName) == true
 
         val enabledServices = Settings.Secure.getString(
@@ -237,11 +331,13 @@ class MainActivity : AppCompatActivity() {
         ) ?: ""
         val fallbackEnabled = enabledServices.contains(packageName)
 
-        findViewById<TextView>(R.id.status_assistant).text = getString(
-            if (isAssistant) R.string.status_assistant_on else R.string.status_assistant_off
+        showStatus(
+            R.id.status_assistant, isAssistant,
+            R.string.status_assistant_on, R.string.status_assistant_off
         )
-        findViewById<TextView>(R.id.status_accessibility).text = getString(
-            if (fallbackEnabled) R.string.status_fallback_on else R.string.status_fallback_off
+        showStatus(
+            R.id.status_accessibility, fallbackEnabled,
+            R.string.status_fallback_on, R.string.status_fallback_off
         )
 
         syncingSwitches = true
@@ -257,6 +353,20 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked =
             Prefs.isQrDetectEnabled(this)
         syncingSwitches = false
+    }
+
+    /** A setup step's state line. The ✓/✗ in the text carries the meaning;
+     *  the color only makes it scannable among the body text around it. */
+    private fun showStatus(viewId: Int, done: Boolean, doneText: Int, pendingText: Int) {
+        val view = findViewById<TextView>(viewId)
+        view.setText(if (done) doneText else pendingText)
+        view.setTextColor(
+            MaterialColors.getColor(
+                view,
+                if (done) com.google.android.material.R.attr.colorPrimary
+                else com.google.android.material.R.attr.colorError
+            )
+        )
     }
 
     /**
@@ -303,5 +413,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
         Toast.makeText(this, R.string.error_no_settings, Toast.LENGTH_SHORT).show()
+    }
+
+    private companion object {
+        // Settings.Secure.VOICE_INTERACTION_SERVICE: readable, but hidden
+        // from the SDK.
+        const val VOICE_INTERACTION_SERVICE = "voice_interaction_service"
+
+        val WATCHED_SETTINGS = listOf(
+            VOICE_INTERACTION_SERVICE,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        )
     }
 }

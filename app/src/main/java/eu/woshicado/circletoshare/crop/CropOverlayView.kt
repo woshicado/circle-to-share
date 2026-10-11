@@ -15,6 +15,8 @@ import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import androidx.core.graphics.withSave
 import eu.woshicado.circletoshare.qr.QrCode
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -53,6 +55,13 @@ class CropOverlayView @JvmOverloads constructor(
     var freeform: Boolean = true
 
     private var bitmap: Bitmap? = null
+
+    // Where the whole display lies in this view's coordinates, when the view
+    // covers only part of it; null when the view is the display. The
+    // screenshot is a picture of the display and is laid out against that, so
+    // it stays exactly over what it shows even where this view stops short of
+    // an edge (the bubble's overlay leaves a tappable navigation bar free).
+    private var displayFrame: RectF? = null
     private val imageMatrix = Matrix()
     private val inverseMatrix = Matrix()
     private val imageBounds = RectF()
@@ -76,9 +85,63 @@ class CropOverlayView @JvmOverloads constructor(
     private var moveOffsetX = 0f
     private var moveOffsetY = 0f
 
-    // Set when a double-tap / long-press has been handled for the current touch
-    // stream, so the drawing/move/resize logic ignores the rest of the gesture.
+    // Set when a long-press has been handled for the current touch stream, so
+    // the drawing/move/resize logic ignores the rest of the gesture.
     private var gestureHandled = false
+
+    private enum class DoubleTap { NONE, INSIDE, EMPTY }
+
+    // What the double-tap in progress will do if its second touch lifts as a
+    // tap. Decided when that touch goes down, acted on only when it lifts:
+    // until then it can still turn into a drag — a new circle, a move, a
+    // resize — and someone who taps and then quickly drags didn't ask to
+    // share or to close the tool.
+    private var pendingDoubleTap = DoubleTap.NONE
+
+    // Latched for the rest of the touch stream once the pointer strays a tap's
+    // distance from where it went down. Comparing only the UP position to the
+    // DOWN position can't tell a tap from a loop that closes on its own start.
+    private var movedPastTapSlop = false
+
+    // The finger the current touch stream belongs to: the first one down.
+    // Further fingers never take part — they can't start, steer or finish
+    // anything — and once this one lifts the stream is over for this view,
+    // whatever the others go on to do.
+    private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
+    // The selection as it was when the current touch went down, to put back
+    // if the system takes the touch away (ACTION_CANCEL).
+    private var selectionAtDown: RectF? = null
+    private var qrSelectionActiveAtDown = false
+
+    // Whether the QR highlights were on screen when the current touch went
+    // down. Freeform drawing clears the selection on DOWN, so by UP "nothing
+    // is selected" no longer says whether the highlights were visible.
+    private var qrVisibleAtDown = false
+
+    // The last plain tap on empty space — nothing selected, nothing under
+    // it, nothing done by it — as the possible first half of a double-tap to
+    // exit. The gesture detector pairs taps itself, but only two at a time:
+    // when the first of three quick taps cleared a box (and so doesn't
+    // count), the detector has already spent its double-tap on taps one and
+    // two, and never offers two and three. This is for pairing those.
+    // (Both ends of the tap are kept: the detector wants the next touch down
+    // soon after this one came up, and soon after it went down as well.)
+    private var emptyTapTime = NO_TAP
+    private var emptyTapDownTime = NO_TAP
+    private var emptyTapX = 0f
+    private var emptyTapY = 0f
+
+    // Whether another finger joined the current touch stream at any point. A
+    // touch with two fingers in it is not a tap.
+    private var hadExtraFinger = false
+    private val doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout().toLong()
+    private val doubleTapSlop = ViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
+
+    // Down-time of the last tap that already did something by itself — cleared
+    // a box, or opened a QR code's actions. Such a tap can't also be the first
+    // half of the double-tap-on-empty-space exit shortcut.
+    private var consumedTapDownTime = NO_TAP
 
     private val gestureDetector = GestureDetector(
         context,
@@ -87,22 +150,39 @@ class CropOverlayView @JvmOverloads constructor(
                 val x = e.x.coerceIn(imageBounds.left, imageBounds.right)
                 val y = e.y.coerceIn(imageBounds.top, imageBounds.bottom)
                 val sel = selection
-                when {
-                    sel != null && sel.contains(x, y) -> {
-                        gestureHandled = true
-                        listener?.onDoubleTapInside()
-                    }
-                    // Exit only when there is nothing selected, so double-tapping
-                    // outside a box doesn't fight the tap-to-clear gesture.
-                    sel == null -> {
-                        gestureHandled = true
-                        listener?.onDoubleTapEmpty()
-                    }
+                // Called as the second touch goes down; [e] is the FIRST
+                // tap's DOWN. The second touch still has to land in the same
+                // place (checked in ACTION_DOWN) and lift as a tap (ACTION_UP)
+                // before anything happens.
+                //
+                // And the first must have been a tap to this view, not only
+                // to the detector, whose idea of how far a tap may wander is
+                // not exactly ours: what it calls a tap may have drawn a
+                // small box here, which the second tap would then be
+                // "inside". (movedPastTapSlop still describes the first
+                // touch at this point — the second's ACTION_DOWN, which
+                // resets it, is handled after the detector's callbacks.)
+                pendingDoubleTap = when {
+                    movedPastTapSlop -> DoubleTap.NONE
+                    sel != null && sel.contains(x, y) -> DoubleTap.INSIDE
+                    // Exit only when there was nothing selected to begin with,
+                    // so double-tapping outside a box doesn't fight the
+                    // tap-to-clear gesture: its first tap has already cleared
+                    // the box by now, which is why `sel == null` alone can't
+                    // tell.
+                    sel == null && e.downTime != consumedTapDownTime -> DoubleTap.EMPTY
+                    else -> DoubleTap.NONE
                 }
                 return true
             }
 
             override fun onLongPress(e: MotionEvent) {
+                // A press that has become a drag is not a long-press. The
+                // detector normally sees to that itself, but not for the
+                // second touch of a double-tap: there it leaves the timer
+                // armed however far the finger travels, and a tap followed
+                // by a slow drag would copy and close mid-drag.
+                if (movedPastTapSlop) return
                 val x = e.x.coerceIn(imageBounds.left, imageBounds.right)
                 val y = e.y.coerceIn(imageBounds.top, imageBounds.bottom)
                 val sel = selection ?: return
@@ -116,6 +196,10 @@ class CropOverlayView @JvmOverloads constructor(
     )
 
     private val handleTouchRadius = dp(28f)
+    // How far a touch may wander and still count as a tap — the system's own
+    // threshold, so this view and its gesture detector (which decides what is
+    // a double-tap) never disagree about the same touch.
+    private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     private val minSelection = dp(24f)
     private val cornerLength = dp(20f)
     // Breathing room so a hand-drawn loop doesn't clip the circled content.
@@ -140,7 +224,9 @@ class CropOverlayView @JvmOverloads constructor(
     // image matrix — same lifecycle as the snap lines: set per capture,
     // remapped on rotation, cleared with the bitmap.
     private var qrCodes: List<QrCode> = emptyList()
-    private var qrRectsView: List<Pair<RectF, QrCode>> = emptyList()
+    private var qrHighlights: List<QrHighlight> = emptyList()
+    private val qrChipPadX = dp(6f)
+    private val qrChipPadY = dp(3f)
 
     // True while the current selection is the untouched box a QR tap drew
     // around the code. Highlights stay visible over such a selection (the
@@ -189,10 +275,12 @@ class CropOverlayView @JvmOverloads constructor(
         textSize = dp(11f)
         isFakeBoldText = true
     }
+    private val qrChipRect = RectF()
 
     fun setBitmap(b: Bitmap) {
         bitmap = b
         selection = null
+        selectionAtDown = null
         qrSelectionActive = false
         mode = Mode.NONE
         resetStroke()
@@ -208,6 +296,7 @@ class CropOverlayView @JvmOverloads constructor(
     fun clear() {
         bitmap = null
         selection = null
+        selectionAtDown = null
         qrSelectionActive = false
         mode = Mode.NONE
         resetStroke()
@@ -245,18 +334,7 @@ class CropOverlayView @JvmOverloads constructor(
      * laid out yet or the mapped box is too small.
      */
     fun applyCropRect(rect: Rect) {
-        bitmap ?: return
-        if (imageBounds.isEmpty) return
-        val mapped = RectF(rect)
-        imageMatrix.mapRect(mapped)
-        mapped.set(
-            mapped.left.coerceIn(imageBounds.left, imageBounds.right),
-            mapped.top.coerceIn(imageBounds.top, imageBounds.bottom),
-            mapped.right.coerceIn(imageBounds.left, imageBounds.right),
-            mapped.bottom.coerceIn(imageBounds.top, imageBounds.bottom)
-        )
-        if (mapped.width() < minSelection || mapped.height() < minSelection) return
-        selection = mapped
+        selection = selectionFor(rect) ?: return
         qrSelectionActive = false
         mode = Mode.NONE
         activeCorner = -1
@@ -315,13 +393,42 @@ class CropOverlayView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** Map the bitmap-space QR boxes into view space (rotation re-derives). */
+    /**
+     * [rect] (bitmap pixels) as a view-space selection clamped to the image,
+     * or null when there is no laid-out image to map onto or the result would
+     * be too small to serve as a selection.
+     */
+    private fun selectionFor(rect: Rect): RectF? {
+        bitmap ?: return null
+        if (imageBounds.isEmpty) return null
+        val mapped = RectF(rect)
+        imageMatrix.mapRect(mapped)
+        mapped.set(
+            mapped.left.coerceIn(imageBounds.left, imageBounds.right),
+            mapped.top.coerceIn(imageBounds.top, imageBounds.bottom),
+            mapped.right.coerceIn(imageBounds.left, imageBounds.right),
+            mapped.bottom.coerceIn(imageBounds.top, imageBounds.bottom)
+        )
+        return if (mapped.width() < minSelection || mapped.height() < minSelection) null else mapped
+    }
+
+    /** Map the bitmap-space QR boxes into view space (rotation re-derives)
+     *  and settle each chip's label, so drawing does no text work per frame.
+     *  The chip carries the decoded payload when that fits within the code's
+     *  own width, else just "QR". */
     private fun rebuildQrRects() {
-        qrRectsView = if (qrCodes.isEmpty() || imageBounds.isEmpty) {
+        qrHighlights = if (qrCodes.isEmpty() || imageBounds.isEmpty) {
             emptyList()
         } else {
             qrCodes.map { code ->
-                RectF(code.bounds).also { imageMatrix.mapRect(it) } to code
+                val rect = RectF(code.bounds).also { imageMatrix.mapRect(it) }
+                val payload = code.text.trim().replace(WHITESPACE_RUN, " ")
+                val payloadWidth = qrChipTextPaint.measureText(payload)
+                if (payload.isNotEmpty() && payloadWidth + qrChipPadX * 2 <= rect.width()) {
+                    QrHighlight(rect, code, payload, payloadWidth)
+                } else {
+                    QrHighlight(rect, code, QR_CHIP_FALLBACK, qrChipTextPaint.measureText(QR_CHIP_FALLBACK))
+                }
             }
         }
     }
@@ -424,27 +531,60 @@ class CropOverlayView @JvmOverloads constructor(
      * image. One tick if anything moved.
      */
     private fun snapSelectionEdges(sel: RectF) {
-        var moved = false
+        val drawn = RectF(sel)
         val l = nearestSnapLine(sel.left, snapXs)
         val r = nearestSnapLine(sel.right, snapXs)
         val t = nearestSnapLine(sel.top, snapYs)
         val b = nearestSnapLine(sel.bottom, snapYs)
-        if (!l.isNaN() && l != sel.left) { sel.left = l; moved = true }
-        if (!r.isNaN() && r != sel.right) { sel.right = r; moved = true }
-        if (!t.isNaN() && t != sel.top) { sel.top = t; moved = true }
-        if (!b.isNaN() && b != sel.bottom) { sel.bottom = b; moved = true }
+        if (!l.isNaN()) sel.left = l
+        if (!r.isNaN()) sel.right = r
+        if (!t.isNaN()) sel.top = t
+        if (!b.isNaN()) sel.bottom = b
+        // (A snap line may lie a little beyond the image; the box may not.)
         sel.set(
             sel.left.coerceIn(imageBounds.left, imageBounds.right),
             sel.top.coerceIn(imageBounds.top, imageBounds.bottom),
             sel.right.coerceIn(imageBounds.left, imageBounds.right),
             sel.bottom.coerceIn(imageBounds.top, imageBounds.bottom)
         )
-        if (moved) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+        // Snapping must not be what makes a box too small to keep: pulled
+        // onto an element under the minimum size (a line of text, an icon),
+        // a box drawn deliberately around it would be thrown away on release
+        // as a scribble. Where that would happen, the edges stay as drawn.
+        if (sel.width() < minSelection && drawn.width() >= minSelection) {
+            sel.left = drawn.left
+            sel.right = drawn.right
+        }
+        if (sel.height() < minSelection && drawn.height() >= minSelection) {
+            sel.top = drawn.top
+            sel.bottom = drawn.bottom
+        }
+        if (sel != drawn) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        onGeometryChanged()
+    }
+
+    /** Tell the view where the whole display lies relative to it ([frame] in
+     *  view coordinates), or null if it covers the display — see
+     *  [displayFrame]. */
+    fun setDisplayFrame(frame: RectF?) {
+        if (frame == displayFrame) return
+        displayFrame = frame?.let { RectF(it) }
+        onGeometryChanged()
+        invalidate()
+    }
+
+    /** The image now maps onto the view differently (new size, new place on
+     *  the display). */
+    private fun onGeometryChanged() {
         updateMatrix()
+        // Nor may a touch in progress bring the old box back if it ends in
+        // a cancel.
+        selectionAtDown = null
+        qrSelectionActiveAtDown = false
         // A screen-space selection is meaningless after a relayout (rotation):
         // it maps to the wrong bitmap region and can exceed the new image
         // bounds, making moveTo's coerceIn throw. Start over.
@@ -462,9 +602,14 @@ class CropOverlayView @JvmOverloads constructor(
         val b = bitmap ?: return
         if (width == 0 || height == 0) return
         val src = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
-        val dst = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val dst = displayFrame ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
         imageMatrix.setRectToRect(src, dst, Matrix.ScaleToFit.CENTER)
         imageMatrix.mapRect(imageBounds, src)
+        // Only the part of the image this view shows can be touched or
+        // selected.
+        if (!imageBounds.intersect(0f, 0f, width.toFloat(), height.toFloat())) {
+            imageBounds.setEmpty()
+        }
         imageMatrix.invert(inverseMatrix)
         // The view-space candidate lines depend on the mapping — re-derive
         // them (handles rotation; the bitmap-space rects stay valid).
@@ -485,11 +630,14 @@ class CropOverlayView @JvmOverloads constructor(
             return
         }
 
-        // Dim everything outside the selection.
-        canvas.drawRect(0f, 0f, width.toFloat(), sel.top, dimPaint)
-        canvas.drawRect(0f, sel.bottom, width.toFloat(), height.toFloat(), dimPaint)
-        canvas.drawRect(0f, sel.top, sel.left, sel.bottom, dimPaint)
-        canvas.drawRect(sel.right, sel.top, width.toFloat(), sel.bottom, dimPaint)
+        // Dim everything outside the selection — in one pass with the box
+        // clipped out. Four abutting rectangles leave a visible seam along
+        // the box's top and bottom whenever those fall between pixels, where
+        // the two partially covered rows blend to less than the full dim.
+        canvas.withSave {
+            clipOutRect(sel)
+            drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
+        }
 
         if (qrSelectionActive) drawQrHighlights(canvas)
 
@@ -510,107 +658,145 @@ class CropOverlayView @JvmOverloads constructor(
     /** Colored box + chip over each detected code. Only drawn while nothing
      *  is selected: the highlight isn't part of the delivered crop, so it
      *  would misrepresent what a selection is about to copy/share. It returns
-     *  when the selection is cleared. The chip carries the decoded payload
-     *  when that fits within the code's own width, else just "QR". */
+     *  when the selection is cleared. */
     private fun drawQrHighlights(canvas: Canvas) {
-        if (qrRectsView.isEmpty()) return
+        if (qrHighlights.isEmpty()) return
         val radius = dp(10f)
-        val chipPadX = dp(6f)
-        val chipPadY = dp(3f)
         val fm = qrChipTextPaint.fontMetrics
-        val chipH = fm.descent - fm.ascent + chipPadY * 2
-        for ((rect, code) in qrRectsView) {
-            val payload = code.text.trim().replace(Regex("\\s+"), " ")
-            val chipText = if (
-                payload.isNotEmpty() &&
-                qrChipTextPaint.measureText(payload) + chipPadX * 2 <= rect.width()
-            ) payload else "QR"
-            val textWidth = qrChipTextPaint.measureText(chipText)
+        val chipH = fm.descent - fm.ascent + qrChipPadY * 2
+        for (highlight in qrHighlights) {
+            val rect = highlight.rect
             canvas.drawRoundRect(rect, radius, radius, qrFillPaint)
             canvas.drawRoundRect(rect, radius, radius, qrStrokePaint)
             // Chip above the top-left corner; inside it when there's no room.
             val chipLeft = rect.left
             var chipTop = rect.top - chipH - dp(4f)
             if (chipTop < 0f) chipTop = rect.top + dp(4f)
-            val chip = RectF(
+            qrChipRect.set(
                 chipLeft, chipTop,
-                chipLeft + textWidth + chipPadX * 2, chipTop + chipH
+                chipLeft + highlight.chipTextWidth + qrChipPadX * 2, chipTop + chipH
             )
-            canvas.drawRoundRect(chip, chipH / 2, chipH / 2, qrChipPaint)
+            canvas.drawRoundRect(qrChipRect, chipH / 2, chipH / 2, qrChipPaint)
             canvas.drawText(
-                chipText,
-                chip.left + chipPadX,
-                chip.top + chipPadY - fm.ascent,
+                highlight.chipText,
+                qrChipRect.left + qrChipPadX,
+                qrChipRect.top + qrChipPadY - fm.ascent,
                 qrChipTextPaint
             )
         }
     }
 
     /** Select [code]'s highlight box as the crop, marked as a QR selection
-     *  (highlights stay visible over it). No-op if the mapped box would be
-     *  too small to serve as a selection. */
+     *  (highlights stay visible over it) — or nothing at all, if the mapped
+     *  box would be too small to serve as a selection. */
     private fun selectQr(code: QrCode) {
-        if (imageBounds.isEmpty) return
-        val mapped = RectF(code.bounds)
-        imageMatrix.mapRect(mapped)
-        mapped.set(
-            mapped.left.coerceIn(imageBounds.left, imageBounds.right),
-            mapped.top.coerceIn(imageBounds.top, imageBounds.bottom),
-            mapped.right.coerceIn(imageBounds.left, imageBounds.right),
-            mapped.bottom.coerceIn(imageBounds.top, imageBounds.bottom)
-        )
-        if (mapped.width() < minSelection || mapped.height() < minSelection) return
-        selection = mapped
-        qrSelectionActive = true
+        // Whatever was selected before — say, another code's box — is not
+        // this code's: its actions are about to open, and Share/Copy must
+        // not go on delivering the other one.
+        selection = selectionFor(code.bounds)
+        qrSelectionActive = selection != null
     }
 
     /** The QR code under a plain tap at ([x], [y]) in view space, if any. */
     private fun qrAt(x: Float, y: Float): QrCode? {
         val slop = dp(8f)
-        return qrRectsView.firstOrNull { (rect, _) ->
+        return qrHighlights.firstOrNull { (rect) ->
             x >= rect.left - slop && x <= rect.right + slop &&
                 y >= rect.top - slop && y <= rect.bottom + slop
-        }?.second
+        }?.code
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (bitmap == null) return false
-        val x = event.x.coerceIn(imageBounds.left, imageBounds.right)
-        val y = event.y.coerceIn(imageBounds.top, imageBounds.bottom)
 
-        // A fresh touch stream starts un-handled; let the detector inspect it
-        // first so a double-tap or long-press can claim it.
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) gestureHandled = false
+        // What this event means for the finger the stream began with.
+        var action = event.actionMasked
+        when (action) {
+            MotionEvent.ACTION_DOWN -> {
+                activePointerId = event.getPointerId(0)
+                // A fresh touch stream starts un-handled.
+                gestureHandled = false
+                pendingDoubleTap = DoubleTap.NONE
+                hadExtraFinger = false
+            }
+            // More than one finger is not a tap, so not half a double-tap
+            // either (the detector drops its own at this point, too).
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                pendingDoubleTap = DoubleTap.NONE
+                hadExtraFinger = true
+            }
+            // Our finger lifting ends the gesture, even with others down.
+            MotionEvent.ACTION_POINTER_UP ->
+                if (event.getPointerId(event.actionIndex) == activePointerId) {
+                    action = MotionEvent.ACTION_UP
+                }
+        }
+        // Let the detector inspect the event first, so a long-press can claim
+        // the stream.
         gestureDetector.onTouchEvent(event)
+
+        val pointerIndex = event.findPointerIndex(activePointerId)
+        if (pointerIndex < 0) return true // our finger is gone; not our business
+        val x = event.getX(pointerIndex).coerceIn(imageBounds.left, imageBounds.right)
+        val y = event.getY(pointerIndex).coerceIn(imageBounds.top, imageBounds.bottom)
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+        }
+
         if (gestureHandled) {
-            // The gesture (share/copy/exit) owns this stream — skip drawing and
-            // drop any in-progress stroke so it doesn't linger as a stray box.
+            // The gesture (copy) owns this stream — skip drawing and drop any
+            // in-progress stroke so it doesn't linger as a stray box.
             if (hasStroke) resetStroke()
             return true
         }
 
-        when (event.actionMasked) {
+        when (action) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x
                 downY = y
+                movedPastTapSlop = false
+                selectionAtDown = selection?.let { RectF(it) }
+                qrSelectionActiveAtDown = qrSelectionActive
+                qrVisibleAtDown = selection == null || qrSelectionActive
                 resetSnapEngagement()
                 val sel = selection
+                // "Double-tap inside the box" needs both taps inside it. The
+                // second may land up to the double-tap distance away from the
+                // first — outside, it is a tap-to-clear, not a share.
+                if (pendingDoubleTap == DoubleTap.INSIDE && sel?.contains(x, y) != true) {
+                    pendingDoubleTap = DoubleTap.NONE
+                }
+                // Likewise "double-tap on empty space" needs the second tap
+                // on empty space: landing on a highlighted code, it opens
+                // the code.
+                if (pendingDoubleTap == DoubleTap.EMPTY && qrVisibleAtDown && qrAt(x, y) != null) {
+                    pendingDoubleTap = DoubleTap.NONE
+                }
+                // A second tap on empty space that the detector did not pair
+                // with the one before (see emptyTapTime), by the detector's
+                // own measures of "soon" and "near".
+                if (pendingDoubleTap == DoubleTap.NONE && sel == null && emptyTapTime != NO_TAP &&
+                    event.eventTime - emptyTapTime in DOUBLE_TAP_MIN_GAP_MS..doubleTapTimeout &&
+                    event.eventTime - emptyTapDownTime <= doubleTapTimeout &&
+                    hypot(x - emptyTapX, y - emptyTapY) <= doubleTapSlop &&
+                    qrAt(x, y) == null
+                ) {
+                    pendingDoubleTap = DoubleTap.EMPTY
+                }
+                emptyTapTime = NO_TAP
                 val corner = sel?.let { hitCorner(it, x, y) } ?: -1
                 mode = when {
                     corner >= 0 -> {
                         activeCorner = corner
                         Mode.RESIZING
                     }
-                    sel != null && sel.contains(x, y) -> {
-                        moveOffsetX = x - sel.left
-                        moveOffsetY = y - sel.top
-                        Mode.MOVING
-                    }
+                    sel != null && sel.contains(x, y) -> Mode.MOVING
                     else -> Mode.DRAWING
                 }
                 if (mode == Mode.DRAWING && freeform) {
                     // Start a fresh circle: drop any old box, begin the trail.
+                    if (selection != null) consumedTapDownTime = event.downTime
                     selection = null
                     strokePath.reset()
                     strokePath.moveTo(x, y)
@@ -621,13 +807,23 @@ class CropOverlayView @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (!movedPastTapSlop && hypot(x - downX, y - downY) >= tapSlop) {
+                    movedPastTapSlop = true
+                    // The drag proper starts here: take the box's offset from
+                    // the finger now rather than at touch-down, so the box
+                    // picks up smoothly instead of lurching by the slop.
+                    if (mode == Mode.MOVING) {
+                        selection?.let {
+                            moveOffsetX = x - it.left
+                            moveOffsetY = y - it.top
+                        }
+                    }
+                }
                 // A real drag (past the tap threshold) is the user taking
                 // over: a box a QR tap drew becomes an ordinary selection and
                 // the highlights hide. Sub-threshold jitter during a tap must
                 // not demote it, or the tap-on-code gesture would misfire.
-                if (mode != Mode.NONE && qrSelectionActive &&
-                    hypot(x - downX, y - downY) >= dp(8f)
-                ) {
+                if (mode != Mode.NONE && qrSelectionActive && movedPastTapSlop) {
                     qrSelectionActive = false
                 }
                 when (mode) {
@@ -636,35 +832,80 @@ class CropOverlayView @JvmOverloads constructor(
                             strokePath.lineTo(x, y)
                             strokeMinX = min(strokeMinX, x); strokeMaxX = max(strokeMaxX, x)
                             strokeMinY = min(strokeMinY, y); strokeMaxY = max(strokeMaxY, y)
-                        } else {
+                        } else if (movedPastTapSlop) {
+                            // Only a real drag rubber-bands. A finger tap
+                            // always jitters a little; treating that as a
+                            // one-pixel box would swallow the tap.
                             selection = RectF(
                                 min(downX, x), min(downY, y),
                                 max(downX, x), max(downY, y)
                             )
                         }
                     }
-                    Mode.RESIZING -> selection?.let { resize(it, x, y) }
-                    Mode.MOVING -> selection?.let { moveTo(it, x, y) }
+                    // A box changes only under a real drag. While the touch
+                    // could still be a tap, a double-tap or a long-press it
+                    // stays exactly as it is — otherwise a tap's wobble near
+                    // a corner pulls that corner to the finger, and on a
+                    // small box (which is all corner) that shrinks or kills
+                    // it just before the shortcut aimed at it fires.
+                    Mode.RESIZING -> if (movedPastTapSlop) selection?.let { resize(it, x, y) }
+                    Mode.MOVING -> if (movedPastTapSlop) selection?.let { moveTo(it, x, y) }
                     Mode.NONE -> Unit
                 }
                 invalidate()
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (action == MotionEvent.ACTION_CANCEL) {
+                    // The system took the touch away — typically it turned
+                    // out to be an edge swipe for Back or Home. It never was
+                    // an edit: put everything back as the finger found it,
+                    // rather than committing half a gesture as a crop.
+                    selection = selectionAtDown
+                    qrSelectionActive = qrSelectionActiveAtDown
+                    selectionAtDown = null
+                    pendingDoubleTap = DoubleTap.NONE
+                    resetStroke()
+                    resetSnapEngagement()
+                    mode = Mode.NONE
+                    activeCorner = -1
+                    listener?.onSelectionChanged(selection != null)
+                    invalidate()
+                    return true
+                }
+                val doubleTap = pendingDoubleTap
+                pendingDoubleTap = DoubleTap.NONE
+                if (action == MotionEvent.ACTION_UP &&
+                    doubleTap != DoubleTap.NONE && !movedPastTapSlop
+                ) {
+                    // The second tap of a double-tap, lifted where it landed.
+                    // Nothing about the box changed during it (that takes a
+                    // drag); drop the dot of a stroke it may have started.
+                    resetStroke()
+                    resetSnapEngagement()
+                    mode = Mode.NONE
+                    activeCorner = -1
+                    invalidate()
+                    when (doubleTap) {
+                        DoubleTap.INSIDE -> listener?.onDoubleTapInside()
+                        else -> listener?.onDoubleTapEmpty()
+                    }
+                    return true
+                }
                 // A plain tap on a QR highlight opens its actions AND selects
                 // the code's box, so it can be shared/copied as an image too.
-                // Only while the highlights are visible (no selection, or the
-                // untouched box from a previous QR tap) — an invisible tap
-                // target would be a trap. Claimed before the crop logic below:
-                // there a motionless tap is otherwise a no-op (freeform:
-                // dust-sized stroke discarded; rect: nothing to clear).
-                if (event.actionMasked == MotionEvent.ACTION_UP &&
-                    (selection == null || qrSelectionActive) &&
-                    mode != Mode.RESIZING &&
-                    hypot(x - downX, y - downY) < dp(8f)
+                // Only if the highlights were visible when the finger went
+                // down (no selection, or the untouched box from a previous QR
+                // tap) — an invisible tap target would be a trap. Claimed
+                // before the crop logic below, whatever the mode: a tap on an
+                // already selected code lands on its box (MOVING) or, for a
+                // small code, inevitably on a corner handle (RESIZING).
+                if (action == MotionEvent.ACTION_UP &&
+                    qrVisibleAtDown && !movedPastTapSlop
                 ) {
                     val code = qrAt(downX, downY)
                     if (code != null) {
+                        consumedTapDownTime = event.downTime
                         resetStroke()
                         resetSnapEngagement()
                         mode = Mode.NONE
@@ -681,7 +922,12 @@ class CropOverlayView @JvmOverloads constructor(
                     // user composing their own crop — never a QR box.
                     qrSelectionActive = false
                     if (freeform) {
-                        if (hasStroke) {
+                        // Only a real stroke becomes a box. A tap's few
+                        // pixels of wobble, once padded (and, with snapping
+                        // on, pulled out to a nearby element), can pass the
+                        // minimum size — and a stray box under the finger
+                        // turns the next tap into "double-tap inside: share".
+                        if (hasStroke && movedPastTapSlop) {
                             // Bounding box of the drawn loop — padded and clamped
                             // to the image. The loop need not be closed.
                             selection = RectF(
@@ -692,8 +938,9 @@ class CropOverlayView @JvmOverloads constructor(
                             )
                         }
                         resetStroke()
-                    } else if (hypot(x - downX, y - downY) < dp(8f)) {
+                    } else if (!movedPastTapSlop) {
                         // A plain tap outside the selection clears it.
+                        if (selection != null) consumedTapDownTime = event.downTime
                         selection = null
                     }
                     // A freshly drawn box (circle or rubber-band) snaps its
@@ -711,6 +958,19 @@ class CropOverlayView @JvmOverloads constructor(
                 activeCorner = -1
                 listener?.onSelectionChanged(selection != null)
                 invalidate()
+                // A tap as the detector would count one: brief (a press held
+                // to long-press length is not a tap, however still), with one
+                // finger, in one place.
+                if (action == MotionEvent.ACTION_UP && !movedPastTapSlop && !hadExtraFinger &&
+                    event.eventTime - event.downTime < ViewConfiguration.getLongPressTimeout() &&
+                    selectionAtDown == null && selection == null &&
+                    consumedTapDownTime != event.downTime
+                ) {
+                    emptyTapTime = event.eventTime
+                    emptyTapDownTime = event.downTime
+                    emptyTapX = x
+                    emptyTapY = y
+                }
             }
         }
         return true
@@ -737,8 +997,12 @@ class CropOverlayView @JvmOverloads constructor(
         // Snap from the RAW finger position every event (stateless): the edge
         // pulls to a line while the finger is within the threshold band and
         // releases the moment it leaves — no sticky state, no jitter.
-        val x = snapX(xRaw)
-        val y = snapY(yRaw)
+        // A snap line may lie a little outside what this view shows of the
+        // image (they are kept for a threshold's width beyond it); the edge
+        // itself must not follow it there — the crop would take in pixels
+        // the user was never shown.
+        val x = snapX(xRaw).coerceIn(imageBounds.left, imageBounds.right)
+        val y = snapY(yRaw).coerceIn(imageBounds.top, imageBounds.bottom)
         when (activeCorner) {
             0 -> { sel.left = x; sel.top = y }
             1 -> { sel.right = x; sel.top = y }
@@ -774,4 +1038,21 @@ class CropOverlayView @JvmOverloads constructor(
 
     private fun dp(value: Float): Float =
         value * resources.displayMetrics.density
+
+    /** A detected code's view-space box and its ready-to-draw chip label. */
+    private data class QrHighlight(
+        val rect: RectF,
+        val code: QrCode,
+        val chipText: String,
+        val chipTextWidth: Float
+    )
+
+    private companion object {
+        const val NO_TAP = -1L
+        // Taps closer together than this are one bouncing contact, not two
+        // taps (the gesture detector's own lower bound).
+        const val DOUBLE_TAP_MIN_GAP_MS = 40L
+        const val QR_CHIP_FALLBACK = "QR"
+        val WHITESPACE_RUN = Regex("\\s+")
+    }
 }

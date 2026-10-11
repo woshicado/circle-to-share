@@ -28,8 +28,10 @@
     <string name="tile_add_failed">Couldn\'t open the add-tile prompt. Add it from the shade\'s edit screen instead.</string>
     <string name="error_tile_needs_accessibility">Enable the accessibility fallback (step 2) first — the Quick Settings tile runs on it.</string>
     <string name="error_tile_locked">Unlock the device first to capture the screen.</string>
+    <string name="error_called_while_unlocking">The device was still unlocking. Call the assistant again to capture the screen.</string>
     <string name="switch_bubble">Show floating capture button</string>
     <string name="switch_bubble_note">A small draggable bubble on screen. Tap it to capture, crop, and share from anywhere.</string>
+    <string name="bubble_description">Capture the screen to crop and share</string>
     <string name="error_bubble_needs_accessibility">Enable the accessibility fallback (step 2) first — the bubble runs on it.</string>
 
     <string name="crop_hint">Drag to crop — or share the full screen</string>
@@ -56,6 +58,7 @@
 
     <string name="error_no_capture">Couldn\'t get a screenshot. Enable the fallback in the Circle to Share app, or turn on \"Use screenshot\" in assistant settings.</string>
     <string name="error_capture_failed">Screen capture failed (secure screen?)</string>
+    <string name="error_save_failed">Couldn\'t save the image. Is the device\'s storage full?</string>
     <string name="error_not_assistant">Set Circle to Share as your assistant app first.</string>
     <string name="error_no_settings">Couldn\'t open settings on this device.</string>
 

@@ -51,6 +51,15 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 Or open the project in Android Studio and hit Run.
 
+### Tests
+
+```sh
+./gradlew testDebugUnitTest          # JVM: which QR payloads get an "Open" button, and as what
+./gradlew connectedDebugAndroidTest  # on a device/emulator: the crop overlay's touch gestures, the setup screen's color field
+```
+
+The instrumented run stops the app's process when it finishes, after which Android leaves the accessibility service unbound — switch it off and on again in Settings → Accessibility before using the app on that device. While it runs it also switches **Detect QR codes** off and changes the **Highlight color**, and puts your settings back at the end.
+
 ## Permissions
 
 None. The APK declares **zero** permissions — no internet, storage, camera, mic, or location.

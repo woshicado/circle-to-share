@@ -56,21 +56,19 @@ object QrDetector {
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
         val source = RGBLuminanceSource(width, height, pixels)
 
-        // Keyed by payload + coarse position: the same code found by both
-        // passes collapses, while two on-screen copies of one payload survive.
-        val found = LinkedHashMap<String, QrCode>()
+        val found = ArrayList<QrCode>()
         decodePass(source, width, height, found)
         // Dark-mode QR codes are light-on-dark, which ZXing won't read
         // directly; a second pass on inverted luminance catches them.
         decodePass(source.invert(), width, height, found)
-        return found.values.toList()
+        return found
     }
 
     private fun decodePass(
         source: LuminanceSource,
         width: Int,
         height: Int,
-        out: MutableMap<String, QrCode>
+        out: MutableList<QrCode>
     ) {
         val results: Array<Result> = try {
             QRCodeMultiReader().decodeMultiple(
@@ -86,8 +84,14 @@ object QrDetector {
         for (result in results) {
             val text = result.text ?: continue
             val bounds = boundsOf(result, width, height) ?: continue
-            val key = "$text@${bounds.centerX() / 100},${bounds.centerY() / 100}"
-            out.putIfAbsent(key, QrCode(text, bounds))
+            // The same code found by both passes (or twice in one) collapses:
+            // its two boxes share a center. Two on-screen copies of one
+            // payload both survive, even side by side — their padded boxes
+            // may overlap, but neither's center lies inside the other.
+            val duplicate = out.any {
+                it.text == text && it.bounds.contains(bounds.centerX(), bounds.centerY())
+            }
+            if (!duplicate) out.add(QrCode(text, bounds))
         }
     }
 
