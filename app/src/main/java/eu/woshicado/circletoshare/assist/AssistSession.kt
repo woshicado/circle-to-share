@@ -433,6 +433,12 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             captureFailed(R.string.error_no_capture)
             return
         }
+        // On, but not agreed to: the service would only hand back nothing.
+        // Say what is actually missing.
+        if (!Prefs.hasAccessibilityConsent(context)) {
+            captureFailed(R.string.error_needs_consent)
+            return
+        }
         val gen = showGeneration
         // One capture per show at a time. A second request can come in while
         // the first is still out (the timeout's, then one for a late "no

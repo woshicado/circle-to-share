@@ -27,6 +27,7 @@ import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -58,8 +59,30 @@ class MainActivity : AppCompatActivity() {
         override fun onChange(selfChange: Boolean) = updateStatus()
     }
 
+    // The accessibility disclosure, asked from two places with two things to
+    // do next. From the settings button, agreeing carries on to where the
+    // button was going.
+    private val disclosureBeforeSettings =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == RESULT_OK) openAccessibilitySettings() else turnOffUnconsentedService()
+        }
+
+    // And for a service found switched on with no answer on record — an
+    // update from a version that didn't ask, or one enabled straight from
+    // Settings. Agreeing needs nothing more; the service is already there.
+    private val disclosureForRunningService =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode != RESULT_OK) turnOffUnconsentedService()
+        }
+
+    // That second case is put to the user once per time the service is found
+    // on, not on every resume: a "no" switches the service off, but the
+    // setting that says so changes a moment later.
+    private var disclosureOffered = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        disclosureOffered = savedInstanceState?.getBoolean(STATE_DISCLOSURE_OFFERED) ?: false
         // Android 15+ lays the activity out edge to edge whether we ask or
         // not (targetSdk 36); ask for the same below that, so every version
         // takes the one code path and looks alike. The theme makes the bars
@@ -112,7 +135,11 @@ class MainActivity : AppCompatActivity() {
             )
         }
         findViewById<Button>(R.id.btn_accessibility_settings).setOnClickListener {
-            openFirstAvailable(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            if (Prefs.hasAccessibilityConsent(this)) {
+                openAccessibilitySettings()
+            } else {
+                disclosureBeforeSettings.launch(Intent(this, DisclosureActivity::class.java))
+            }
         }
         findViewById<Button>(R.id.btn_test).setOnClickListener {
             val service = AssistInteractionService.instance
@@ -129,7 +156,7 @@ class MainActivity : AppCompatActivity() {
                 // Refuse at the source like the bubble/snap switches, rather
                 // than letting the user place a tile that can only ever bounce
                 // them back here.
-                if (ScreenshotAccessibilityService.instance == null) {
+                if (!fallbackUsable()) {
                     Toast.makeText(
                         this, R.string.error_tile_needs_accessibility, Toast.LENGTH_LONG
                     ).show()
@@ -145,7 +172,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialSwitch>(R.id.switch_bubble).setOnCheckedChangeListener { view, checked ->
             if (syncingSwitches) return@setOnCheckedChangeListener
-            if (checked && ScreenshotAccessibilityService.instance == null) {
+            if (checked && !fallbackUsable()) {
                 view.isChecked = false
                 Toast.makeText(this, R.string.error_bubble_needs_accessibility, Toast.LENGTH_LONG).show()
                 return@setOnCheckedChangeListener
@@ -160,7 +187,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialSwitch>(R.id.switch_snap).setOnCheckedChangeListener { view, checked ->
             if (syncingSwitches) return@setOnCheckedChangeListener
-            if (checked && ScreenshotAccessibilityService.instance == null) {
+            if (checked && !fallbackUsable()) {
                 view.isChecked = false
                 Toast.makeText(this, R.string.error_snap_needs_accessibility, Toast.LENGTH_LONG).show()
                 return@setOnCheckedChangeListener
@@ -174,6 +201,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         setupQrColorField()
+
+        findViewById<Button>(R.id.btn_kofi).setOnClickListener { openUrl(R.string.url_kofi) }
+        findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
+        findViewById<Button>(R.id.btn_privacy).setOnClickListener { openUrl(R.string.url_privacy) }
+        findViewById<Button>(R.id.btn_imprint).setOnClickListener { openUrl(R.string.url_imprint) }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_DISCLOSURE_OFFERED, disclosureOffered)
     }
 
     // Guards the color field's TextWatcher against programmatic setText
@@ -340,6 +377,13 @@ class MainActivity : AppCompatActivity() {
             R.string.status_fallback_on, R.string.status_fallback_off
         )
 
+        if (!fallbackEnabled) {
+            disclosureOffered = false
+        } else if (!Prefs.hasAccessibilityConsent(this) && !disclosureOffered) {
+            disclosureOffered = true
+            disclosureForRunningService.launch(Intent(this, DisclosureActivity::class.java))
+        }
+
         syncingSwitches = true
         findViewById<MaterialSwitch>(R.id.switch_bubble).isChecked =
             ScreenshotAccessibilityService.isBubbleEnabled(this)
@@ -404,6 +448,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** The accessibility service is running and may be used: the tile, the
+     *  bubble and snapping all need both. */
+    private fun fallbackUsable(): Boolean =
+        ScreenshotAccessibilityService.instance != null && Prefs.hasAccessibilityConsent(this)
+
+    private fun openAccessibilitySettings() =
+        openFirstAvailable(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+
+    /** The disclosure was declined. A service that is on anyway holds back
+     *  for want of consent (see ScreenshotAccessibilityService), but leaving
+     *  it enabled would show a setup step as done that does nothing. */
+    private fun turnOffUnconsentedService() {
+        val service = ScreenshotAccessibilityService.instance ?: return
+        service.disableSelf()
+        Toast.makeText(this, R.string.fallback_turned_off, Toast.LENGTH_SHORT).show()
+    }
+
     private fun openFirstAvailable(vararg intents: Intent) {
         for (intent in intents) {
             try {
@@ -419,6 +480,8 @@ class MainActivity : AppCompatActivity() {
         // Settings.Secure.VOICE_INTERACTION_SERVICE: readable, but hidden
         // from the SDK.
         const val VOICE_INTERACTION_SERVICE = "voice_interaction_service"
+
+        const val STATE_DISCLOSURE_OFFERED = "disclosure_offered"
 
         val WATCHED_SETTINGS = listOf(
             VOICE_INTERACTION_SERVICE,

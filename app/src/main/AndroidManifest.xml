@@ -38,6 +38,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Accessibility disclosure and consent, shown by MainActivity. -->
+        <activity
+            android:name=".DisclosureActivity"
+            android:exported="false" />
+
         <!-- Digital assistant entry point: launched when the user invokes the assistant. -->
         <service
             android:name=".assist.AssistInteractionService"

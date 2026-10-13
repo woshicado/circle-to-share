@@ -7,7 +7,7 @@
 > Expect the kinds of mistakes LLMs typically make.
 > Review the code before relying on it, and please report anything that looks off.
 
-Grab the screen from anywhere, crop it, share it — without saving anything to your device. A replacement for the share flow Google removed from Circle to Search.
+Grab the screen from anywhere, crop it, share it — without saving anything to your device.
 
 Trigger it → the screen freezes → circle what you want → **Share** or **Copy**. The crop lives only in the app's private cache (auto-cleaned after an hour); nothing ever hits your gallery.
 
@@ -25,8 +25,8 @@ Use any of these:
 
 ## How it works
 
-- The app registers as a **digital assistant** (`VoiceInteractionService`). Whatever launches the assistant — a press-and-hold of the power button, or a swipe up from a bottom corner — now opens the crop overlay instead of Gemini/Google.
-- The system hands assistants a screenshot of the current screen (`onHandleScreenshot`), the same mechanism Circle to Search uses. On devices/ROMs that don't provide it to third-party assistants, an **accessibility service** (`AccessibilityService.takeScreenshot`) captures instead.
+- The app registers as a **digital assistant** (`VoiceInteractionService`). Whatever launches the assistant — a press-and-hold of the power button, or a swipe up from a bottom corner — now opens the crop overlay instead of the previous assistant.
+- The system hands assistants a screenshot of the current screen (`onHandleScreenshot`). On devices/ROMs that don't provide it to third-party assistants, an **accessibility service** (`AccessibilityService.takeScreenshot`) captures instead.
 - The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
 - **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture, solely to align the crop box — nothing is stored or transmitted. This is why the accessibility service declares the "retrieve window content" capability; leave the toggle off and the bounds are never read at all.
@@ -68,8 +68,8 @@ Screen capture is granted implicitly by the assistant/accessibility bindings, an
 ## Setup on the phone
 
 1. Open the app and follow the three steps:
-   1. **Set as assistant**: Settings → Apps → Default apps → Digital assistant app → *Circle to Share*. If a "Use screenshot" toggle appears there, turn it on.
-   2. **Enable the fallback** (recommended): Settings → Accessibility → *Circle to Share* → turn on the master **Use** toggle. Only needed if step 1 alone shows "Couldn't get a screenshot".
+   1. **Set as assistant**: Settings → Apps → Default apps → Digital assistant app → *Circle to Share*. If a "Use screen data" toggle appears there, turn it on.
+   2. **Enable the fallback** (recommended): tap **Open accessibility settings**, read the disclosure of what the service accesses and tap **Agree**, then under Accessibility → *Circle to Share* turn on the master **Use** toggle. Only needed if step 1 alone shows "Couldn't get a screenshot", or for the tile, the bubble and snapping.
    3. **Test** with the in-app button, then try the real gesture from any app.
 
 > [!NOTE]
@@ -86,6 +86,7 @@ Screen capture is granted implicitly by the assistant/accessibility bindings, an
 - Tapping outside the selection clears it; with no selection, **Share full** sends the entire screen.
 - "Copy" puts the image on the clipboard (paste into messengers via Gboard etc.).
 - Shortcuts in the overlay: **double-tap inside** the box shares, **long-press inside** copies, **double-tap on empty space** (nothing selected) exits. The top hint becomes tappable when your previous crop fits the new capture — tap it to restore that exact box.
+- The accessibility service does nothing until you have agreed to the in-app disclosure — switching it on in Settings alone is not enough. Updating from a version before 0.3.0 with the service already on, the app asks the next time you open it; **No thanks** switches the service off.
 - After an update that changes the accessibility service's declared capabilities (e.g. adding snap-to-content), Android may switch the service off — just re-enable it in Settings → Accessibility.
 
 ## Support

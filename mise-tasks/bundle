@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#MISE description="Build the signed release App Bundle (.aab) for Google Play, then print how to publish it"
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
+
+GRADLE="app/build.gradle.kts"
+AAB="app/build/outputs/bundle/release/app-release.aab"
+
+# Gradle falls back to the debug key when no keystore is configured (see
+# app/build.gradle.kts). Fine for an APK on your own phone; Play rejects it.
+if [ ! -f keystore.properties ] && [ -z "${KEYSTORE_FILE:-}" ]; then
+    echo "No release keystore configured: Google Play rejects debug-signed bundles." >&2
+    echo "Create keystore.properties (copy keystore.properties.template) or set KEYSTORE_FILE and friends." >&2
+    exit 1
+fi
+
+./gradlew bundleRelease
+
+version_name="$(grep -oE 'versionName = "[^"]+"' "$GRADLE" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
+version_code="$(grep -oE 'versionCode = [0-9]+' "$GRADLE" | head -1 | grep -oE '[0-9]+')"
+notes="fastlane/metadata/android/en-US/changelogs/$version_code.txt"
+
+# The certificate the bundle is signed with — what Play Console shows as the
+# upload key (and as the app signing key, if you gave Play this same key).
+sha256="$(keytool -printcert -jarfile "$AAB" 2>/dev/null | grep -m1 'SHA256:' | sed -E 's/.*SHA256: *//' || true)"
+
+cat <<TEXT
+
+Bundle:  $AAB
+Version: $version_name (versionCode $version_code)
+Signed:  SHA-256 ${sha256:-unknown (keytool not found)}
+
+Next, in Play Console (https://play.google.com/console):
+
+  First upload only
+    1. Create the app if it doesn't exist yet (App, Free).
+    2. BEFORE uploading: Test and release > App integrity > Play app signing >
+       "Change the app signing key" > provide a copy of the key in release.jks,
+       so Play and GitHub builds carry the same signature. This can't be
+       changed once the app is in open testing or production.
+    3. Policy > App content: privacy policy URL, Data safety, the
+       Accessibility API declaration (with a video of the in-app disclosure),
+       ads, app access, target audience, content rating.
+    4. Store listing: texts and images from fastlane/metadata/android/en-US/.
+
+  Every release
+    1. Test and release > Testing > Internal testing (or Closed testing) >
+       Create new release > upload $AAB
+       versionCode $version_code must be higher than anything uploaded before
+       (bump with: mise run bump).
+    2. Release notes: $( [ -f "$notes" ] && echo "paste $notes" || echo "write them (no $notes yet)" )
+    3. Review release > Start rollout.
+
+  Getting to production (personal developer accounts)
+    - Run a closed test with at least 12 testers opted in for 14 days running.
+    - Then Dashboard > "Apply for production", and promote the tested release.
+TEXT

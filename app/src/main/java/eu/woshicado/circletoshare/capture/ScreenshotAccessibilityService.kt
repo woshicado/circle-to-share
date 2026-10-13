@@ -67,7 +67,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         LOCKED,
 
         /** A crop tool is already open or opening, from any path. */
-        BUSY
+        BUSY,
+
+        /** The user has not agreed to the accessibility disclosure. Only the
+         *  app's own screen can ask; nothing here can clear this. */
+        NO_CONSENT
     }
 
     companion object {
@@ -452,7 +456,18 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * Whether the user has agreed to what this service reads (the disclosure
+     * in the app). Until then it is switched on in name only: it looks at no
+     * event, no window and no screen, and shows no bubble — being enabled in
+     * Settings, which can be done without ever opening the app, is not that
+     * agreement.
+     */
+    private fun consented(): Boolean = Prefs.hasAccessibilityConsent(this)
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // (Nothing of ours is on screen to keep in step with, either.)
+        if (!consented()) return
         // The power menu opens beneath the crop overlay, where it can be
         // neither seen nor used. No broadcast announces it, but its dialog's
         // window appearing does arrive here.
@@ -473,6 +488,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // --- Screen capture: bubble path + assistant fallback/clean re-capture --
 
     fun capture(callback: (Bitmap?) -> Unit) {
+        if (!consented()) return callback(null)
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             mainExecutor,
@@ -512,6 +528,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * the capture itself.
      */
     fun collectSnapBounds(): SnapBounds? {
+        if (!consented()) return null
         val bounds = displayMetrics().bounds
         val display = Rect(0, 0, bounds.width(), bounds.height())
         val minSide = dp(4)
@@ -610,11 +627,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun isScreenUsable(): Boolean =
         isScreenInteractive() && !dreaming && !keyguardLocked()
 
-    /** Bubble is shown only when enabled, no tool open, the user is present,
-     *  and the screen is usable — hidden on lock screen and AOD even when the
-     *  device is trust-unlocked (Extend Unlock). */
+    /** Bubble is shown only when enabled and agreed to, no tool open, the
+     *  user is present, and the screen is usable — hidden on lock screen and
+     *  AOD even when the device is trust-unlocked (Extend Unlock). */
     private fun shouldShowBubble(): Boolean =
-        isBubbleEnabled(this) && !capturing && overlayView == null &&
+        isBubbleEnabled(this) && consented() && !capturing && overlayView == null &&
             userPresent && isScreenUsable()
 
     private fun refreshBubble() {
@@ -887,6 +904,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // there. It's also the right gate for the unlockAndRun path: keying off
         // `userPresent` instead would race ACTION_USER_PRESENT, which can land
         // after the post-unlock runnable does.
+        if (!consented()) return Refusal.NO_CONSENT
         if (!isScreenUsable()) return Refusal.LOCKED
         if (capturing) return Refusal.BUSY // a tool is already open/opening
 
@@ -988,6 +1006,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * UI triggered it to be off the screen.
      */
     fun triggerCapture(delayMs: Long = BUBBLE_HIDE_DELAY_MS) {
+        if (!consented()) return
         val gen = beginCapture() ?: return
         ui.postDelayed({ runCapture(gen) }, delayMs)
     }

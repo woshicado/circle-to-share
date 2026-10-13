@@ -11,6 +11,7 @@ object Prefs {
     private const val KEY_SNAP = "snap_to_content"
     private const val KEY_QR = "qr_detect"
     private const val KEY_QR_COLOR = "qr_color"
+    private const val KEY_A11Y_CONSENT = "a11y_consent"
 
     /** Default QR highlight color (gold). */
     const val QR_COLOR_DEFAULT = "#FFCA28"
@@ -22,6 +23,20 @@ object Prefs {
     private const val KEY_CROP_B = "last_crop_b"
     private const val KEY_CROP_W = "last_crop_w"
     private const val KEY_CROP_H = "last_crop_h"
+
+    /**
+     * True once the user has agreed to the accessibility disclosure
+     * ([DisclosureActivity]). The accessibility service does nothing without
+     * it — being switched on in Settings is not an answer to what it reads.
+     */
+    fun hasAccessibilityConsent(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_A11Y_CONSENT, false)
+
+    fun setAccessibilityConsent(context: Context, granted: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_A11Y_CONSENT, granted).apply()
+    }
 
     /** True = draw a freeform circle (default); false = drag a rectangle. */
     fun isFreeformCrop(context: Context): Boolean =

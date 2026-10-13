@@ -11,6 +11,7 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.widget.Toast
 import eu.woshicado.circletoshare.MainActivity
+import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
@@ -88,6 +89,13 @@ class CaptureTileService : TileService() {
             openApp()
             return
         }
+        // Likewise a service that is on but not yet agreed to: the app's
+        // screen is where the disclosure is put to the user.
+        if (!Prefs.hasAccessibilityConsent(this)) {
+            Toast.makeText(this, R.string.error_needs_consent, Toast.LENGTH_LONG).show()
+            openApp()
+            return
+        }
         capture(mayPromptUnlock = true)
     }
 
@@ -118,6 +126,10 @@ class CaptureTileService : TileService() {
             // The shade stays open, which is the feedback: a crop tool is
             // already up and about to be visible anyway.
             ScreenshotAccessibilityService.Refusal.BUSY -> Unit
+            // onClick checks first, so this is not expected — and by the
+            // retry it is too late to open the app (see onClick).
+            ScreenshotAccessibilityService.Refusal.NO_CONSENT ->
+                Toast.makeText(this, R.string.error_needs_consent, Toast.LENGTH_LONG).show()
         }
     }
 

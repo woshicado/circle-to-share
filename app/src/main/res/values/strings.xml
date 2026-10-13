@@ -2,51 +2,51 @@
 <resources>
     <string name="app_name">Circle to Share</string>
 
-    <string name="setup_intro">Grab the screen from anywhere, crop it, and share it — without saving anything to your device.</string>
+    <string name="setup_intro">Grab the screen from anywhere, crop it, and share it. Nothing is saved to your device.</string>
 
-    <string name="setup_step1_title">1. Set as your assistant</string>
-    <string name="setup_step1_body">Choose Circle to Share as the digital assistant app (Default digital assistant app → Circle to Share). This makes the assistant gesture — press and hold the power button, or swipe up from a bottom corner — open the crop overlay. If a \"Use screenshot\" toggle is shown there, enable it.</string>
+    <string name="setup_step1_title">1. Set as your assistant (optional)</string>
+    <string name="setup_step1_body">Choose Circle to Share as the digital assistant app (Default digital assistant app > Circle to Share). This makes the assistant gesture open the crop overlay (e.g., press and hold the power button, or swipe up from a bottom corner). If a \"Use screen data\" toggle is shown there, enable it.</string>
     <string name="status_assistant_on">✓ Active as assistant</string>
     <string name="status_assistant_off">✗ Not set as assistant yet</string>
     <string name="btn_assistant_settings">Open assistant settings</string>
 
     <string name="setup_step2_title">2. Enable the capture fallback (recommended)</string>
-    <string name="setup_step2_body">If your device doesn\'t hand screenshots to third-party assistants, the accessibility service captures the screen instead. Under Accessibility → Circle to Share, turn on the main \"Use\" toggle. (This also powers the Quick Settings tile and the floating button below.)</string>
+    <string name="setup_step2_body">If your device doesn\'t hand screenshots to third-party assistants, the accessibility service captures the screen instead. Under Accessibility > Circle to Share, turn on the main \"Use\" toggle. (This also powers the Quick Settings tile and the floating button below.)</string>
     <string name="status_fallback_on">✓ Fallback enabled</string>
     <string name="status_fallback_off">✗ Fallback disabled</string>
     <string name="btn_accessibility_settings">Open accessibility settings</string>
 
     <string name="setup_step3_title">3. Try it</string>
-    <string name="setup_step3_body">Invoke your assistant (hold the power button, or swipe up from a bottom corner), circle what you want, then hit Share. Tip: the test button below captures this screen.</string>
+    <string name="setup_step3_body">Invoke your assistant (hold the power button, or swipe up from a bottom corner), circle what you want, then hit Share. <b>Tip:</b> the test button below captures this screen.</string>
     <string name="btn_test">Test capture</string>
 
     <string name="triggers_title">How to open it</string>
-    <string name="triggers_body">Ways to trigger a capture — use any of them:\n\n• Power button: press and hold (works via the assistant role from step 1). Set under System → Gestures → Press &amp; hold power button → Digital assistant, if it opens the power menu instead.\n\n• Corner swipe: swipe up from a bottom corner — another way to invoke the assistant from step 1, if enabled in your system settings.\n\n• Quick Settings tile: tapping it closes the shade and captures what was behind it. To add it, pull down the shade, tap the pencil/edit button, and drag the \"Circle to Share\" tile into your tiles — or use the button below, if your Android version offers it. Needs the accessibility fallback (step 2) enabled.\n\n• Floating button (below): the app\'s own always-on-screen bubble you can tap from any app. Drag it anywhere; it stays out of the way. Needs the accessibility fallback (step 2) enabled.</string>
+    <string name="triggers_body">Ways to trigger a capture:\n\n• Power button (assistant-powered): press and hold. Set under System > Gestures > Press &amp; hold power button > Digital assistant, if it opens the power menu instead.\n\n• Corner swipe (assistant-powered): swipe up from a bottom corner. A different way to invoke the assistant, if enabled in your system settings.\n\n• Quick Settings tile: tapping closes the shade and captures the screen behind it. To add it, pull down the shade, tap the edit button, and drag the \"Circle to Share\" tile into your tiles. <i>Needs the accessibility fallback (step 2) enabled.</i>\n\n• Floating button (below): the app\'s own always-on-screen bubble you can tap. Drag it anywhere; it stays out of the way. <i>Needs the accessibility fallback (step 2) enabled.</i></string>
     <string name="tile_label">Circle to Share</string>
     <string name="btn_add_tile">Add Quick Settings tile</string>
     <string name="tile_already_added">The tile is already in your Quick Settings.</string>
     <string name="tile_add_failed">Couldn\'t open the add-tile prompt. Add it from the shade\'s edit screen instead.</string>
-    <string name="error_tile_needs_accessibility">Enable the accessibility fallback (step 2) first — the Quick Settings tile runs on it.</string>
+    <string name="error_tile_needs_accessibility">Enable the accessibility fallback (step 2) first.</string>
     <string name="error_tile_locked">Unlock the device first to capture the screen.</string>
     <string name="error_called_while_unlocking">The device was still unlocking. Call the assistant again to capture the screen.</string>
     <string name="switch_bubble">Show floating capture button</string>
     <string name="switch_bubble_note">A small draggable bubble on screen. Tap it to capture, crop, and share from anywhere.</string>
     <string name="bubble_description">Capture the screen to crop and share</string>
-    <string name="error_bubble_needs_accessibility">Enable the accessibility fallback (step 2) first — the bubble runs on it.</string>
+    <string name="error_bubble_needs_accessibility">Enable the accessibility fallback (step 2) first.</string>
 
-    <string name="crop_hint">Drag to crop — or share the full screen</string>
-    <string name="crop_hint_freeform">Circle what you want — or share the full screen</string>
+    <string name="crop_hint">Drag to crop</string>
+    <string name="crop_hint_freeform">Circle to crop</string>
     <string name="crop_hint_restore">Tap to restore your last crop</string>
     <string name="switch_freeform">Circle to crop</string>
     <string name="switch_freeform_note">Draw a freeform loop around what you want and its outline becomes the crop box. Turn off to drag a rectangle directly.</string>
     <string name="switch_snap">Snap to screen content</string>
-    <string name="switch_snap_note">Crop edges snap to the buttons, cards, and images that were on screen. Element positions are read only at the moment of capture and never stored. Needs the accessibility fallback (step 2).</string>
-    <string name="error_snap_needs_accessibility">Enable the accessibility fallback (step 2) first — snapping reads element positions through it.</string>
+  <string name="switch_snap_note">Crop edges snap to the buttons, cards, and images that were on screen. Element positions are read at the moment of capture and not stored. <i>Needs the accessibility fallback (step 2).</i></string>
+    <string name="error_snap_needs_accessibility">Enable the accessibility fallback (step 2) first.</string>
     <string name="switch_qr">Detect QR codes</string>
-    <string name="switch_qr_note">Highlights QR codes found in the capture — tap one to copy its content or open its link. Scanning happens entirely on this device; nothing is stored or sent anywhere.</string>
+    <string name="switch_qr_note">Highlights QR codes found in the capture. Tap it to copy its content or open its link. Scanning happens locally on this device.</string>
     <string name="qr_color_label">Highlight color</string>
     <string name="qr_color_hint">#FFCA28</string>
-    <string name="qr_color_invalid">Not a color — use a hex code like #FFCA28</string>
+    <string name="qr_color_invalid">Not a color. Use a hex code like #FFCA28</string>
     <string name="qr_open">Open</string>
     <string name="qr_open_failed">No app can open this</string>
     <string name="action_cancel">Cancel</string>
@@ -56,12 +56,38 @@
     <string name="share_title">Share screenshot</string>
     <string name="copied">Copied to clipboard</string>
 
-    <string name="error_no_capture">Couldn\'t get a screenshot. Enable the fallback in the Circle to Share app, or turn on \"Use screenshot\" in assistant settings.</string>
+    <string name="error_no_capture">Couldn\'t get a screenshot. Enable the fallback in the Circle to Share app, or turn on \"Use screen data\" in assistant settings.</string>
     <string name="error_capture_failed">Screen capture failed (secure screen?)</string>
     <string name="error_save_failed">Couldn\'t save the image. Is the device\'s storage full?</string>
     <string name="error_not_assistant">Set Circle to Share as your assistant app first.</string>
     <string name="error_no_settings">Couldn\'t open settings on this device.</string>
 
+    <string name="error_needs_consent">Open Circle to Share and agree to the accessibility disclosure first.</string>
+    <string name="fallback_turned_off">Accessibility service turned off.</string>
+
+    <string name="disclosure_title">Before you turn on the accessibility service</string>
+    <string name="disclosure_lead">Circle to Share uses Android\'s Accessibility API (AccessibilityService) to capture your screen when you ask it to: from the Quick Settings tile, the floating button, or as a fallback for the assistant gesture. It is not an accessibility tool. Nothing it accesses is collected by, sent to, or shared with the developer or anyone else.</string>
+    <string name="disclosure_access_title">What it accesses</string>
+    <string name="disclosure_access_body">• A screenshot of your screen at the moment you trigger a capture.\n\n• The positions and sizes of the elements on screen (not their text or content) at that same moment, and only while \"Snap to screen content\" is switched on.\n\n• Notices from the system that a window has opened or changed, with the window\'s title and the app it belongs to, and the positions of system windows to recognize the lock screen, the power menu and the notification shade, so the floating button and the crop tool get out of their way.</string>
+    <string name="disclosure_use_title">How it is used</string>
+    <string name="disclosure_use_body">• Everything is processed on this device, in memory, to show you the crop tool.\n\n• The part you share or copy is written to the app\'s private cache so the receiving app can read it. Files older than an hour are deleted the next time you capture.\n\n• An image leaves Circle to Share only when you tap Share or Copy, and only to the app you choose. The app has no internet permission.\n\n• The service never taps, types or changes settings for you. Its only action is closing the notification shade when you use the Quick Settings tile.</string>
+    <string name="disclosure_choice_title">Your choice</string>
+    <string name="disclosure_choice_body">Tap Agree to allow this. You then switch the service on in Android\'s accessibility settings, and can switch it off there at any time.\n\nTap No thanks to keep using Circle to Share with the assistant gesture only. The tile, the floating button and snapping stay off, and a service that is already on is switched off.</string>
+    <string name="disclosure_agree">Agree</string>
+    <string name="disclosure_decline">No thanks</string>
+
+    <string name="about_title">About</string>
+    <string name="btn_privacy">Privacy policy</string>
+    <string name="btn_imprint">Imprint</string>
+    <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary donation. It unlocks nothing.</string>
+    <string name="btn_kofi">Buy me a Coffee!</string>
+    <string name="btn_feedback">Send feedback</string>
+    <string name="feedback_subject">Circle to Share feedback (v%1$s)</string>
+    <string name="feedback_email" translatable="false">android@woshicado.eu</string>
+    <string name="url_privacy" translatable="false">https://woshicado.eu/privacy-policy</string>
+    <string name="url_imprint" translatable="false">https://woshicado.eu/imprint</string>
+    <string name="url_kofi" translatable="false">https://ko-fi.com/woshicado</string>
+
     <string name="accessibility_service_label">Circle to Share</string>
-    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it — with the assistant gesture, the Quick Settings tile, or the app\'s floating button — so you can crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen. Nothing is captured until you trigger it, nothing is saved to your device, and nothing ever leaves it.</string>
+    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it with the assistant gesture, the Quick Settings tile, or the app\'s floating button. You can then crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen; if enabled in the app. Nothing is captured until you trigger it, nothing is saved to your device, and nothing ever leaves it.</string>
 </resources>
