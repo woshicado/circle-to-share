@@ -67,6 +67,8 @@ Screen capture is granted implicitly by the assistant/accessibility bindings, an
 
 ## Setup on the phone
 
+_Requires Android 11 or newer._
+
 1. Open the app and follow the three steps:
    1. **Set as assistant**: Settings → Apps → Default apps → Digital assistant app → *Circle to Share*. If a "Use screen data" toggle appears there, turn it on.
    2. **Enable the fallback** (recommended): tap **Open accessibility settings**, read the disclosure of what the service accesses and tap **Agree**, then under Accessibility → *Circle to Share* turn on the master **Use** toggle. Only needed if step 1 alone shows "Couldn't get a screenshot", or for the tile, the bubble and snapping.

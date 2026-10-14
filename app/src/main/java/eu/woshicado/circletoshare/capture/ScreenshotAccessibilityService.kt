@@ -18,7 +18,6 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
-import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -42,6 +41,7 @@ import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
@@ -303,19 +303,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         }
     }
 
-    // A call coming in. Its notification appears beneath the overlay like
-    // everything else of the system's, so the phone would ring with nothing
-    // to see or answer. The ringing itself is observable, though — and needs
-    // no permission, unlike the telephony call state.
-    //
-    // Audible ringing only: with the ringer on vibrate or silent the system
-    // never enters this mode, and nothing else announces the call that this
-    // app could see without a phone permission or without listening in on
-    // notifications — neither of which it is going to ask for. There the
-    // overlay stays up, as it always did.
-    private val audioModeListener = AudioManager.OnModeChangedListener { mode ->
-        if (mode == AudioManager.MODE_RINGTONE) yieldToSystemUi()
-    }
+    // A call coming in: the overlay must not sit on top of it. Android 12+
+    // only — see RingWatcher.
+    private val ringWatcher = RingWatcher(this) { yieldToSystemUi() }
 
     // Catches AOD/doze transitions, which don't reliably send ACTION_SCREEN_OFF.
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -369,8 +359,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             registerReceiver(closeSystemDialogsReceiver, closeSystemDialogs)
         }
         displayManager.registerDisplayListener(displayListener, ui)
-        getSystemService(AudioManager::class.java)
-            .addOnModeChangedListener(mainExecutor, audioModeListener)
+        ringWatcher.start()
         refreshBubble()
     }
 
@@ -430,9 +419,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
         runCatching { displayManager.unregisterDisplayListener(displayListener) }
-        runCatching {
-            getSystemService(AudioManager::class.java).removeOnModeChangedListener(audioModeListener)
-        }
+        ringWatcher.stop()
         ui.removeCallbacks(settledRefresh)
         dropNotice()
         teardownOverlay()
@@ -445,9 +432,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         runCatching { unregisterReceiver(screenReceiver) }
         runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
         runCatching { displayManager.unregisterDisplayListener(displayListener) }
-        runCatching {
-            getSystemService(AudioManager::class.java).removeOnModeChangedListener(audioModeListener)
-        }
+        ringWatcher.stop()
         ui.removeCallbacks(settledRefresh)
         dropNotice()
         teardownOverlay()
@@ -916,12 +901,38 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // for. With no shade there is no collapse to outlast, so shoot on the
         // same short delay the bubble uses.
         val gen = beginCapture() ?: return Refusal.BUSY
-        if (performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)) {
+        if (dismissShade()) {
             awaitShadeCollapsed(gen)
         } else {
             ui.postDelayed({ runCapture(gen) }, BUBBLE_HIDE_DELAY_MS)
         }
         return Refusal.NONE
+    }
+
+    /**
+     * Ask SystemUI to collapse the notification shade; false if there was no
+     * shade to collapse.
+     *
+     * Android 12 added a global action for this. Android 11 has none, but
+     * still lets an app send the close-system-dialogs broadcast (blocked from
+     * 12 on), which collapses the shade the same way. The broadcast reports
+     * nothing back, so look for the shade first.
+     *
+     * closeSystemDialogsReceiver hears that broadcast as well, and ignores
+     * it: it only acts on the reasons the system gives, and this has none.
+     */
+    // Lint judges the broadcast by Android 12's rules (a permission no app
+    // can hold) and by our own receiver for the same action; it is only ever
+    // sent on Android 11, to SystemUI.
+    @SuppressLint("MissingPermission", "UnsafeImplicitIntentLaunch")
+    private fun dismissShade(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        }
+        if (!shadeExpanded()) return false
+        @Suppress("DEPRECATION")
+        sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+        return true
     }
 
     /**

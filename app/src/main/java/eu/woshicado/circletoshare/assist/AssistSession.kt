@@ -9,7 +9,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
-import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.LocaleList
@@ -24,6 +23,7 @@ import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
+import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.crop.CropScreen
@@ -103,12 +103,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         override fun onReceive(context: Context?, intent: Intent?) = hide()
     }
 
-    // A call coming in: its notification appears beneath this window, so the
-    // phone would ring with nothing to see or answer. (Audible ringing only —
-    // see the same listener in ScreenshotAccessibilityService.)
-    private val audioModeListener = AudioManager.OnModeChangedListener { mode ->
-        if (mode == AudioManager.MODE_RINGTONE) hide()
-    }
+    // A call coming in: this window must not sit on top of it. Android 12+
+    // only — see RingWatcher.
+    private val ringWatcher = RingWatcher(context) { hide() }
 
     // Catches AOD/doze transitions, which don't reliably send ACTION_SCREEN_OFF.
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -253,8 +250,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             )
             context.getSystemService(DisplayManager::class.java)
                 .registerDisplayListener(displayListener, ui)
-            context.getSystemService(AudioManager::class.java)
-                .addOnModeChangedListener(context.mainExecutor, audioModeListener)
+            ringWatcher.start()
             // The power menu opens beneath this window too. Only the
             // accessibility service can see it appear; if it is running, it
             // tells us.
@@ -400,10 +396,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             runCatching { context.unregisterReceiver(screenOffReceiver) }
             context.getSystemService(DisplayManager::class.java)
                 .unregisterDisplayListener(displayListener)
-            runCatching {
-                context.getSystemService(AudioManager::class.java)
-                    .removeOnModeChangedListener(audioModeListener)
-            }
+            ringWatcher.stop()
             ScreenshotAccessibilityService.onYieldToSystemUi = null
         }
         showGeneration++
