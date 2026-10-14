@@ -154,6 +154,31 @@
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary" />
 
+        <LinearLayout
+            android:id="@+id/bubble_opacity_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/bubble_opacity_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:importantForAccessibility="no"
+                android:text="@string/bubble_opacity"
+                android:textSize="14sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/slider_bubble_opacity"
+                android:contentDescription="@string/bubble_opacity"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+        </LinearLayout>
+
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switch_freeform"
             android:layout_width="match_parent"

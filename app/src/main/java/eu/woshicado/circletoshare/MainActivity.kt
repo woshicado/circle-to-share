@@ -35,9 +35,11 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.materialswitch.MaterialSwitch
+import com.google.android.material.slider.Slider
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.tile.CaptureTileService
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
 
@@ -52,6 +54,10 @@ class MainActivity : AppCompatActivity() {
     // onResume, and that calls the listeners exactly like a tap would. For
     // the bubble switch a phantom "turned on" resets the bubble's position.
     private var syncingSwitches = true
+
+    // True while a finger is on the opacity slider: the bubble previews the
+    // value, which is saved only when the touch ends (see onCreate).
+    private var opacityTracking = false
 
     // Tells the status lines when either setup step changes in Settings
     // while this screen is in view (see onStart).
@@ -178,6 +184,36 @@ class MainActivity : AppCompatActivity() {
                 return@setOnCheckedChangeListener
             }
             ScreenshotAccessibilityService.setBubblePref(this, checked)
+            setOpacityRowVisible(checked)
+        }
+
+        findViewById<Slider>(R.id.slider_bubble_opacity).apply {
+            // Range and step come from the service, which snaps stored values
+            // to exactly these.
+            valueFrom = ScreenshotAccessibilityService.BUBBLE_OPACITY_MIN.toFloat()
+            valueTo = ScreenshotAccessibilityService.BUBBLE_OPACITY_MAX.toFloat()
+            stepSize = ScreenshotAccessibilityService.BUBBLE_OPACITY_STEP.toFloat()
+            value = valueTo
+            setLabelFormatter { getString(R.string.bubble_opacity_value, it.roundToInt()) }
+            // While a finger is on the slider the bubble only previews the
+            // value; it is saved once, on release (or cancel).
+            addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) {
+                    opacityTracking = true
+                }
+
+                override fun onStopTrackingTouch(slider: Slider) = saveBubbleOpacity()
+            })
+            addOnChangeListener { _, value, fromUser ->
+                if (!fromUser) return@addOnChangeListener
+                if (opacityTracking) {
+                    ScreenshotAccessibilityService.instance?.previewBubbleOpacity(value.roundToInt())
+                } else {
+                    // TalkBack and keyboard adjustments come without a touch
+                    // to end: each one is a finished change.
+                    ScreenshotAccessibilityService.setBubbleOpacity(this@MainActivity, value.roundToInt())
+                }
+            }
         }
 
         findViewById<MaterialSwitch>(R.id.switch_freeform).setOnCheckedChangeListener { _, checked ->
@@ -340,6 +376,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         contentResolver.unregisterContentObserver(setupObserver)
+        // Leaving mid-drag (rotation, another window taking over) may not end
+        // the touch first: keep what the bubble is previewing rather than
+        // leave it showing a value the setting doesn't have.
+        if (opacityTracking) saveBubbleOpacity()
         super.onStop()
     }
 
@@ -385,8 +425,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         syncingSwitches = true
-        findViewById<MaterialSwitch>(R.id.switch_bubble).isChecked =
-            ScreenshotAccessibilityService.isBubbleEnabled(this)
+        val bubbleEnabled = ScreenshotAccessibilityService.isBubbleEnabled(this)
+        findViewById<MaterialSwitch>(R.id.switch_bubble).isChecked = bubbleEnabled
+        // Not under the user's finger: this also runs when a watched setting
+        // changes, which can be mid-drag.
+        if (!opacityTracking) {
+            findViewById<Slider>(R.id.slider_bubble_opacity).value =
+                ScreenshotAccessibilityService.getBubbleOpacity(this).toFloat()
+        }
+        setOpacityRowVisible(bubbleEnabled)
 
         findViewById<MaterialSwitch>(R.id.switch_freeform).isChecked =
             Prefs.isFreeformCrop(this)
@@ -397,6 +444,20 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked =
             Prefs.isQrDetectEnabled(this)
         syncingSwitches = false
+    }
+
+    /** The opacity slider only means something while the bubble is on. */
+    private fun setOpacityRowVisible(visible: Boolean) {
+        findViewById<View>(R.id.bubble_opacity_row).visibility =
+            if (visible) View.VISIBLE else View.GONE
+    }
+
+    /** End a slider drag: store the value the bubble has been previewing. */
+    private fun saveBubbleOpacity() {
+        opacityTracking = false
+        ScreenshotAccessibilityService.setBubbleOpacity(
+            this, findViewById<Slider>(R.id.slider_bubble_opacity).value.roundToInt()
+        )
     }
 
     /** A setup step's state line. The ✓/✗ in the text carries the meaning;

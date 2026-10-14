@@ -3,11 +3,18 @@
 > [!WARNING]
 > **Built with AI/LLM assistance.**
 >
-> This app was written by Fable 5 (which curiously fell back to Opus 4.8).
+> This app was written with assistance from Claude (Fable and Opus).
 > Expect the kinds of mistakes LLMs typically make.
 > Review the code before relying on it, and please report anything that looks off.
 
 Grab the screen from anywhere, crop it, share it — without saving anything to your device.
+
+<p>
+  <img src="assets/1.png" width="24%" alt="Circle what you want" />
+  <img src="assets/2.png" width="24%" alt="Adjust, then share or copy" />
+  <img src="assets/3.png" width="24%" alt="QR codes are spotted for you" />
+  <img src="assets/5.png" width="24%" alt="Make it work your way" />
+</p>
 
 Trigger it → the screen freezes → circle what you want → **Share** or **Copy**. The crop lives only in the app's private cache (auto-cleaned after an hour); nothing ever hits your gallery.
 
@@ -20,7 +27,7 @@ Use any of these:
 - **Power button (press & hold)** — works via the digital-assistant role.
 - **Swipe up from a bottom corner** — another way to invoke the digital assistant, if enabled in your system settings.
 - **Quick Settings tile** — add it with the **Add Quick Settings tile** button in the app (Android 13+), or by hand: pull down the shade → edit (pencil) → drag the *Circle to Share* tile in. Tapping it collapses the shade and captures what was behind it. Needs the accessibility fallback — without it the tile explains itself and opens the app.
-- **Floating bubble** — an optional, always-on-screen draggable button (toggle in the app). Tap it to capture from any app.
+- **Floating bubble** — an optional, always-on-screen draggable button (toggle in the app). Tap it to capture from any app; long-press to open the app.
 - _Or any other way that starts your digital assistant_
 
 ## How it works

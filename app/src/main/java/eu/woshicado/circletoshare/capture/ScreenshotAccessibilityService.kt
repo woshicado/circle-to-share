@@ -33,12 +33,14 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.WindowMetrics
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
+import eu.woshicado.circletoshare.MainActivity
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
@@ -47,6 +49,7 @@ import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
 import eu.woshicado.circletoshare.share.ShareHelper
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import java.io.IOException
 
 /**
@@ -110,10 +113,17 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         private const val KEY_BUBBLE = "bubble_enabled"
         private const val KEY_BUBBLE_X = "bubble_x"
         private const val KEY_BUBBLE_Y = "bubble_y"
+        private const val KEY_BUBBLE_OPACITY = "bubble_opacity"
         // Set once the saved spot is known to be measured from the display's
         // corner — see migrateBubbleOrigin.
         private const val KEY_BUBBLE_ORIGIN_DISPLAY = "bubble_origin_display"
         private const val UNSET = Int.MIN_VALUE
+
+        // Bubble opacity in percent. The floor keeps a bubble that has to be
+        // found again (to drag or tap it) from fading out of sight entirely.
+        const val BUBBLE_OPACITY_MIN = 20
+        const val BUBBLE_OPACITY_MAX = 100
+        const val BUBBLE_OPACITY_STEP = 5
         private const val NO_CAPTURE = -1
 
         private const val SYSTEM_UI_PACKAGE = "com.android.systemui"
@@ -174,6 +184,26 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             editor.apply()
             instance?.applyBubbleState()
         }
+
+        /** Always a value the settings slider accepts: in range and on a
+         *  step (the slider throws on anything else). */
+        fun getBubbleOpacity(context: Context): Int = snapOpacity(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_BUBBLE_OPACITY, BUBBLE_OPACITY_MAX)
+        )
+
+        fun setBubbleOpacity(context: Context, percent: Int) {
+            val snapped = snapOpacity(percent)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_BUBBLE_OPACITY, snapped).apply()
+            instance?.applySavedBubbleOpacity(snapped)
+        }
+
+        private fun snapOpacity(percent: Int): Int {
+            val steps = ((percent - BUBBLE_OPACITY_MIN).toFloat() / BUBBLE_OPACITY_STEP).roundToInt()
+            return (BUBBLE_OPACITY_MIN + steps * BUBBLE_OPACITY_STEP)
+                .coerceIn(BUBBLE_OPACITY_MIN, BUBBLE_OPACITY_MAX)
+        }
     }
 
     private val ui = Handler(Looper.getMainLooper())
@@ -211,6 +241,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // Last bubble position (persisted), so it reappears where the user left it.
     private var bubbleX = UNSET
     private var bubbleY = UNSET
+
+    // The opacity the settings slider is previewing mid-drag, not yet saved
+    // (null otherwise). A bubble rebuilt during the drag shows this, not the
+    // stored value. Main thread only.
+    private var previewOpacity: Int? = null
 
     // True only while the user has actively dismissed the keyguard (ACTION_USER_
     // _PRESENT). Reset when the screen sleeps/dozes. This — unlike the keyguard
@@ -586,6 +621,23 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** Re-apply the pref (called when the toggle changes). */
     fun applyBubbleState() = refreshBubble()
 
+    /** Show [percent] on the bubble without storing it — the settings
+     *  slider previews here while dragging and saves on release. */
+    fun previewBubbleOpacity(percent: Int) {
+        ui.post {
+            previewOpacity = percent
+            bubbleView?.alpha = percent / 100f
+        }
+    }
+
+    /** The slider's value was saved: the preview, if any, is over. */
+    private fun applySavedBubbleOpacity(percent: Int) {
+        ui.post {
+            previewOpacity = null
+            bubbleView?.alpha = percent / 100f
+        }
+    }
+
     /** Forget the saved position so the bubble returns to its default spot. */
     fun resetBubblePosition() {
         bubbleX = UNSET
@@ -644,6 +696,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 setColor(Color.argb(235, 52, 43, 109))
                 setStroke(dp(1), Color.argb(90, 255, 255, 255))
             }
+            alpha = (previewOpacity ?: getBubbleOpacity(this@ScreenshotAccessibilityService)) / 100f
         }
         val params = WindowManager.LayoutParams(
             size, size,
@@ -798,11 +851,40 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         var originX = 0
         var originY = 0
         var moved = false
+        var longPressed = false
         var range = Rect()
+        // The touch listener below eats every event, so the view's own
+        // long-press detection never runs: time it here instead.
+        val longPress = Runnable {
+            // Taken down mid-press (screen locked, a capture began): the
+            // press is gone with it.
+            if (bubbleView !== view) return@Runnable
+            longPressed = true
+            view.performLongClick() // with the long-press haptic
+        }
         // The click is what assistive tech invokes (Switch Access and Voice
         // Access only offer views with a click action); touch reaches it
         // through performClick below.
         view.setOnClickListener { triggerCapture() }
+        // Returning false when nothing opens also skips the long-press haptic.
+        view.setOnLongClickListener { openApp() }
+        // Name the long press for screen readers ("double-tap and hold to
+        // open Circle to Share") instead of a bare "long press".
+        view.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(
+                host: View, info: AccessibilityNodeInfo
+            ) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.addAction(
+                    AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_LONG_CLICK,
+                        getString(
+                            R.string.bubble_long_press_action, getString(R.string.app_name)
+                        )
+                    )
+                )
+            }
+        }
         // Clickable, but never focusable — which a click listener makes a
         // view by default. The bubble's window can't take key input anyway,
         // yet a focusable view in it still grabs "default focus" whenever
@@ -819,6 +901,11 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     startX = event.rawX; startY = event.rawY
                     originX = params.x; originY = params.y
                     moved = false
+                    longPressed = false
+                    // A DOWN without an UP/CANCEL before it would otherwise
+                    // leave the earlier press's timer running too.
+                    ui.removeCallbacks(longPress)
+                    ui.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
                     // A drag stays within what placeBubbleOnScreen allows:
                     // dropped beyond it (the window has no limits of its
                     // own), the bubble would sit half off the screen or on
@@ -828,9 +915,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    // The app is opening; the rest of this touch is spent.
+                    if (longPressed) return@setOnTouchListener true
                     val dx = (event.rawX - startX)
                     val dy = (event.rawY - startY)
-                    if (abs(dx) > slop || abs(dy) > slop) moved = true
+                    if (abs(dx) > slop || abs(dy) > slop) {
+                        moved = true
+                        ui.removeCallbacks(longPress)
+                    }
                     // Only a drag moves the bubble or its remembered spot. A
                     // tap's jitter must not: while the window is clamped
                     // (see placeBubbleOnScreen) it would overwrite the spot
@@ -845,10 +937,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
+                    ui.removeCallbacks(longPress)
+                    if (longPressed) return@setOnTouchListener true
                     if (!moved) v.performClick() else persistBubblePosition()
                     true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    ui.removeCallbacks(longPress)
                     // A drag can end in a cancel (a system gesture steals the
                     // pointer); the bubble already moved, so persist like UP.
                     if (moved) persistBubblePosition()
@@ -857,6 +952,30 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 else -> false
             }
         }
+    }
+
+    /**
+     * Bring up the app's settings screen. Allowed from here because the
+     * system binds this service. Returns whether it went out; when it
+     * didn't, says so.
+     *
+     * Like the Quick Settings tile's, plus SINGLE_TOP: the bubble can be
+     * long-pressed beside an open settings screen (split screen), which is
+     * then kept rather than rebuilt with what is half-typed there lost. The
+     * tile must not keep it — a DisclosureActivity that CLEAR_TOP closes
+     * above it would report a decline. The bubble never meets one: it only
+     * shows once the disclosure is agreed to.
+     */
+    private fun openApp(): Boolean {
+        val intent = Intent(this, MainActivity::class.java).addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+        )
+        val opened = runCatching { startActivity(intent) }.isSuccess
+        if (!opened) {
+            showNotice(getString(R.string.bubble_open_failed, getString(R.string.app_name)))
+        }
+        return opened
     }
 
     private fun persistBubblePosition() {

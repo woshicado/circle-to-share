@@ -30,7 +30,11 @@
     <string name="error_tile_locked">Unlock the device first to capture the screen.</string>
     <string name="error_called_while_unlocking">The device was still unlocking. Call the assistant again to capture the screen.</string>
     <string name="switch_bubble">Show floating capture button</string>
-    <string name="switch_bubble_note">A small draggable bubble on screen. Tap it to capture, crop, and share from anywhere.</string>
+    <string name="switch_bubble_note">A small draggable bubble on screen. Tap it to capture, crop, and share from anywhere; long-press to open this app.</string>
+    <string name="bubble_opacity">Opacity</string>
+    <string name="bubble_opacity_value">%1$d%%</string>
+    <string name="bubble_long_press_action">Open %1$s</string>
+    <string name="bubble_open_failed">Couldn\'t open %1$s.</string>
     <string name="bubble_description">Capture the screen to crop and share</string>
     <string name="error_bubble_needs_accessibility">Enable the accessibility fallback (step 2) first.</string>
 
@@ -80,7 +84,7 @@
     <string name="btn_privacy">Privacy policy</string>
     <string name="btn_imprint">Imprint</string>
     <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary donation. It unlocks nothing.</string>
-    <string name="btn_kofi">Buy me a Coffee!</string>
+    <string name="btn_kofi">Buy me a coffee!</string>
     <string name="btn_feedback">Send feedback</string>
     <string name="feedback_subject">Circle to Share feedback (v%1$s)</string>
     <string name="feedback_email" translatable="false">android@woshicado.eu</string>
