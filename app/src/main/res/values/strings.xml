@@ -16,12 +16,34 @@
     <string name="status_fallback_off">✗ Fallback disabled</string>
     <string name="btn_accessibility_settings">Open accessibility settings</string>
 
+    <!-- The "?" beside a setup step and the card it opens. %1$s: one of the help_title_* below. -->
+    <string name="help_button_description">Show how: %1$s</string>
+    <string name="help_title_assistant">Set as your assistant</string>
+    <string name="help_steps_assistant">Tap Open assistant settings, then Default digital assistant app. Choose \"Circle to Share\". If present, turn \"Use screen data\" or \"Use screenshot\" on.</string>
+    <string name="help_title_fallback">Enable the capture fallback</string>
+    <string name="help_steps_fallback">Tap Open accessibility settings and agree. Open \"Circle to Share\" (under Downloaded apps), turn on \"Use Circle to Share\", and tap Allow. Toggle greyed out (\"Restricted setting\")? Open App info for \"Circle to Share\", tap ⋮ at the top, choose \"Allow restricted settings\", then try again.</string>
+    <string name="help_title_tile">Add the Quick Settings tile</string>
+    <string name="help_steps_tile">Needs the capture fallback (step 2) on. Then tap Add Quick Settings tile if you have it, or add the tile by hand: pull down the shade twice, tap the edit (pencil) button, find \"Circle to Share\" and drag it up into your tiles.</string>
+    <string name="help_varies_note">Menus on your phone may look different.</string>
+
     <string name="setup_step3_title">3. Try it</string>
     <string name="setup_step3_body">Invoke your assistant (hold the power button, or swipe up from a bottom corner), circle what you want, then hit Share. <b>Tip:</b> the test button below captures this screen.</string>
     <string name="btn_test">Test capture</string>
 
     <string name="triggers_title">How to open it</string>
-    <string name="triggers_body">Ways to trigger a capture:\n\n• Power button (assistant-powered): press and hold. Set under System > Gestures > Press &amp; hold power button > Digital assistant, if it opens the power menu instead.\n\n• Corner swipe (assistant-powered): swipe up from a bottom corner. A different way to invoke the assistant, if enabled in your system settings.\n\n• Quick Settings tile: tapping closes the shade and captures the screen behind it. To add it, pull down the shade, tap the edit button, and drag the \"Circle to Share\" tile into your tiles. <i>Needs the accessibility fallback (step 2) enabled.</i>\n\n• Floating button (below): the app\'s own always-on-screen bubble you can tap. Drag it anywhere; it stays out of the way. <i>Needs the accessibility fallback (step 2) enabled.</i></string>
+    <string name="triggers_intro">Ways to trigger a capture:</string>
+    <string name="trigger_power">• Power button (assistant-powered): press and hold. Set under System > Gestures > Press &amp; hold power button > Digital assistant, if it opens the power menu instead.</string>
+    <string name="trigger_corner">• Corner swipe (assistant-powered): swipe up from a bottom corner. A different way to invoke the assistant, if enabled in your system settings.</string>
+    <string name="trigger_tile">• Quick Settings tile: tapping closes the shade and captures the screen behind it. To add it, pull down the shade, tap the edit button, and drag the \"Circle to Share\" tile into your tiles. <i>Needs the accessibility fallback (step 2) enabled.</i></string>
+    <string name="trigger_bubble">• Floating button (below): the app\'s own always-on-screen bubble you can tap and drag. <i>Needs the accessibility fallback (step 2) enabled.</i></string>
+    <string name="help_title_trigger_power">Press and hold the power button</string>
+    <string name="help_steps_trigger_power">Hold the power button for about a second: the crop tool opens. Needs step 1. If the power menu opens instead, set System > Gestures > Press &amp; hold power button to Digital assistant.</string>
+    <string name="help_title_trigger_corner">Swipe up from a bottom corner</string>
+    <string name="help_steps_trigger_corner">Swipe diagonally up and inward from either bottom corner. Needs step 1 and gesture navigation with \"Swipe to invoke assistant\" on (System > Gestures > System navigation).</string>
+    <string name="help_title_trigger_tile">Capture with the Quick Settings tile</string>
+    <string name="help_steps_trigger_tile">Pull down the shade and tap \"Circle to Share\": the shade closes and the screen behind it is captured. Needs step 2 and the tile added (see Add Quick Settings tile).</string>
+    <string name="help_title_trigger_bubble">Capture with the floating button</string>
+    <string name="help_steps_trigger_bubble">Turn on Show floating capture button below, then tap the bubble from any app. Drag it out of the way; long-press it to open this app. Needs step 2.</string>
     <string name="tile_label">Circle to Share</string>
     <string name="btn_add_tile">Add Quick Settings tile</string>
     <string name="tile_already_added">The tile is already in your Quick Settings.</string>

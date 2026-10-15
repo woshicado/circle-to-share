@@ -13,4 +13,12 @@
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
         <item name="android:windowLightNavigationBar">?attr/isLightTheme</item>
     </style>
+
+    <!-- The "?" beside a setup step (see SetupHelp.kt). -->
+    <style name="Widget.CircleToShare.HelpButton" parent="Widget.Material3.Button.IconButton">
+        <item name="icon">@drawable/ic_help_outline</item>
+        <item name="iconTint">?attr/colorPrimary</item>
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">48dp</item>
+    </style>
 </resources>

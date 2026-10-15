@@ -147,6 +147,35 @@ class MainActivity : AppCompatActivity() {
                 disclosureBeforeSettings.launch(Intent(this, DisclosureActivity::class.java))
             }
         }
+        attachSetupHelp(
+            findViewById(R.id.help_assistant),
+            R.string.help_title_assistant, R.raw.help_assistant, R.string.help_steps_assistant
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_fallback),
+            R.string.help_title_fallback, R.raw.help_fallback, R.string.help_steps_fallback
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_tile),
+            R.string.help_title_tile, R.raw.help_tile, R.string.help_steps_tile
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_trigger_power),
+            R.string.help_title_trigger_power, R.raw.help_trigger_power, R.string.help_steps_trigger_power
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_trigger_corner),
+            R.string.help_title_trigger_corner, R.raw.help_trigger_corner, R.string.help_steps_trigger_corner
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_trigger_tile),
+            R.string.help_title_trigger_tile, R.raw.help_trigger_tile, R.string.help_steps_trigger_tile
+        )
+        attachSetupHelp(
+            findViewById(R.id.help_trigger_bubble),
+            R.string.help_title_trigger_bubble, R.raw.help_trigger_bubble, R.string.help_steps_trigger_bubble
+        )
+
         findViewById<Button>(R.id.btn_test).setOnClickListener {
             val service = AssistInteractionService.instance
             if (service == null) {
@@ -172,7 +201,7 @@ class MainActivity : AppCompatActivity() {
             }
         } else {
             // Pre-33 the tile can only be placed by hand from the shade's edit
-            // screen, which triggers_body already explains.
+            // screen, which the tile's line under "How to open it" explains.
             addTile.visibility = View.GONE
         }
 

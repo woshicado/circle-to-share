@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The card a setup step's "?" opens (see SetupHelp.kt). The recording's
+     size is set in code to fit beside the "?". -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/help_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="17sp"
+        android:textStyle="bold" />
+
+    <!-- Says nothing the steps below don't; tap pauses or resumes it. -->
+    <com.google.android.material.imageview.ShapeableImageView
+        android:id="@+id/help_clip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="12dp"
+        android:importantForAccessibility="no"
+        android:padding="1dp"
+        android:scaleType="fitCenter"
+        app:shapeAppearance="?attr/shapeAppearanceCornerMedium"
+        app:strokeColor="?attr/colorOutlineVariant"
+        app:strokeWidth="1dp" />
+
+    <TextView
+        android:id="@+id/help_steps"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textColor="?attr/colorOnSurface"
+        android:textSize="14sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/help_varies_note"
+        android:textColor="?android:attr/textColorSecondary"
+        android:textSize="13sp" />
+</LinearLayout>

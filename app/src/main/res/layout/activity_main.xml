@@ -49,12 +49,29 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btn_assistant_settings"
+        <!-- A setup button and its "?" (see SetupHelp.kt). The row wraps its
+             content and the button carries the weight: so the button never
+             stretches, but at large font sizes it shrinks (its label wraps)
+             rather than squeezing the "?" off the row. -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/btn_assistant_settings" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_assistant_settings"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:text="@string/btn_assistant_settings" />
+
+            <Button
+                android:id="@+id/help_assistant"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -79,12 +96,26 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btn_accessibility_settings"
+        <!-- Button and "?", as for step 1. -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:text="@string/btn_accessibility_settings" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_accessibility_settings"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:text="@string/btn_accessibility_settings" />
+
+            <Button
+                android:id="@+id/help_fallback"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
@@ -126,16 +157,109 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/triggers_body"
+            android:text="@string/triggers_intro"
             android:textSize="14sp" />
 
-        <!-- Hidden below API 33, which has no "add this tile" prompt. -->
-        <Button
-            android:id="@+id/btn_add_tile"
+        <!-- One row per trigger, each with the "?" that shows it in action
+             (see SetupHelp.kt). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/trigger_power"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/help_trigger_power"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/trigger_corner"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/help_trigger_corner"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/trigger_tile"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/help_trigger_tile"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/trigger_bubble"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/help_trigger_bubble"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
+
+        <!-- Button and "?", as for step 1. -->
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:text="@string/btn_add_tile" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Hidden below API 33, which has no "add this tile" prompt.
+                 The "?" stays: it shows the way by hand. -->
+            <Button
+                android:id="@+id/btn_add_tile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:text="@string/btn_add_tile" />
+
+            <Button
+                android:id="@+id/help_tile"
+                style="@style/Widget.CircleToShare.HelpButton" />
+        </LinearLayout>
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switch_bubble"

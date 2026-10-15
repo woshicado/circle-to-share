@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- On the window's root view: the setup help card that is open, if any. -->
+    <item name="setup_help_card" type="id" />
+</resources>
