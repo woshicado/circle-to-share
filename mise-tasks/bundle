@@ -6,10 +6,10 @@ cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 GRADLE="app/build.gradle.kts"
 AAB="app/build/outputs/bundle/release/app-release.aab"
 
-# Gradle falls back to the debug key when no keystore is configured (see
-# app/build.gradle.kts). Fine for an APK on your own phone; Play rejects it.
+# Without a keystore Gradle leaves the release unsigned (see
+# app/build.gradle.kts), which Play rejects.
 if [ ! -f keystore.properties ] && [ -z "${KEYSTORE_FILE:-}" ]; then
-    echo "No release keystore configured: Google Play rejects debug-signed bundles." >&2
+    echo "No release keystore configured: Google Play rejects unsigned bundles." >&2
     echo "Create keystore.properties (copy keystore.properties.template) or set KEYSTORE_FILE and friends." >&2
     exit 1
 fi

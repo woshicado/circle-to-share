@@ -56,15 +56,21 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (hasReleaseSigning) {
-                signingConfigs.getByName("release")
+            // Without a keystore the release APK stays unsigned
+            // (app-release-unsigned.apk), as F-Droid's build expects; it signs
+            // the APK itself. CI always sets the real key.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             } else {
-                // Local convenience: an unconfigured release build is still
-                // installable via the debug key. CI always sets the real key.
-                logger.warn("No release keystore configured — signing release with the debug key.")
-                signingConfigs.getByName("debug")
+                logger.warn("No release keystore configured — release APK is unsigned.")
             }
         }
+    }
+
+    // AGP otherwise embeds an encrypted dependency list (readable only by
+    // Google) in the APK signing block; F-Droid rejects APKs that carry it.
+    dependenciesInfo {
+        includeInApk = false
     }
 
     compileOptions {
