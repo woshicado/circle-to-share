@@ -1,0 +1,21 @@
+Circle to Share captures the screen from anywhere, lets you crop it, and shares or copies the result — without ever saving anything to your device.
+
+Trigger it, the screen freezes, and you can circle what you want. Then tap Share or Copy. The crop lives in the app's private cache only and never lands in your gallery.
+
+How to open it (use any of them):
+
+* Power button (assistant-powered): press and hold.
+* Corner swipe (assistant-powered): swipe up from a bottom corner.
+* Quick Settings tile: tap it and the shade closes before the capture.
+* Floating bubble: an optional, always-on-screen button you can tap from any app and drag out of the way.
+
+Highlights:
+
+* No permissions: no internet, storage, camera, microphone, or location.
+* Nothing is saved to your device.
+* QR codes in the capture are highlighted, and can be opened, copied, or shared.
+* Optional snapping: crop edges align with the buttons, cards and images that were on screen.
+
+Accessibility service: the Quick Settings tile, the floating bubble, snapping, and a capture fallback for devices that don't hand screenshots to third-party assistants use Android's AccessibilityService API. It is optional and off until you agree to the in-app disclosure and switch it on. It is used only to capture the screen and read element positions at the moment you trigger a capture.
+
+Note: screens that block screenshots (banking apps, DRM video) cannot be captured.

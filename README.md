@@ -10,10 +10,10 @@
 Grab the screen from anywhere, crop it, share it — without saving anything to your device.
 
 <p>
-  <img src="assets/1.png" width="24%" alt="Circle what you want" />
-  <img src="assets/2.png" width="24%" alt="Adjust, then share or copy" />
-  <img src="assets/3.png" width="24%" alt="QR codes are spotted for you" />
-  <img src="assets/5.png" width="24%" alt="Make it work your way" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Circle what you want" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="Adjust, then share or copy" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="QR codes are spotted for you" />
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="24%" alt="Make it work your way" />
 </p>
 
 Trigger it → the screen freezes → circle what you want → **Share** or **Copy**. The crop lives only in the app's private cache (auto-cleaned after an hour); nothing ever hits your gallery.

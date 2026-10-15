@@ -1,0 +1,2 @@
+* Setup help: tap the ? beside a setup step or a way to open the app to see a short recording of where to tap, with the steps in words below. The recordings highlight each tap and swipe as it happens.
+* Floating bubble: adjustable opacity
