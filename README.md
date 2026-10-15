@@ -103,3 +103,10 @@ _Requires Android 11 or newer._
 [![Support me on Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/woshicado)
 
 If this app is useful to you, consider supporting its development: ☕ **[ko-fi.com/woshicado](https://ko-fi.com/woshicado)**
+
+## License
+
+Circle to Share is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. See [LICENSE](LICENSE).
