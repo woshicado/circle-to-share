@@ -29,10 +29,19 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 30
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.3.3"
+        versionCode = 13
+        versionName = "0.3.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Where the build is distributed decides how tips are taken: Google Play
+    // requires its own billing and forbids outside donation links; F-Droid
+    // and GitHub builds keep the Ko-fi link and no Google libraries.
+    flavorDimensions += "store"
+    productFlavors {
+        create("foss") { dimension = "store" }
+        create("play") { dimension = "store" }
     }
 
     signingConfigs {
@@ -89,6 +98,9 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     // Pure-Java QR decoding. No native libs, no Play Services, and offline
     implementation("com.google.zxing:core:3.5.3")
+    // Play build only (see src/play). After changing the version, run
+    // ./gradlew connectedPlayDebugAndroidTest: its telemetry must stay off.
+    "playImplementation"("com.android.billingclient:billing:9.1.0")
 
     // Tests only — nothing below ships in the APK.
     testImplementation("junit:junit:4.13.2")

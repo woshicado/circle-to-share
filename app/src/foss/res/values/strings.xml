@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Only in this build: the Play build must not link to outside donations. -->
+    <string name="url_kofi" translatable="false">https://ko-fi.com/woshicado</string>
+</resources>

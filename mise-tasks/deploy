@@ -3,11 +3,13 @@
 #USAGE flag "--build" help "Build before installing"
 #USAGE flag "--release" help "Target the release (signed) variant"
 #USAGE flag "--debug" help "Target the debug variant explicitly"
+#USAGE flag "--play" help "Target the Google Play flavor (Play Billing tips) instead of foss (Ko-fi link)"
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 
-DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
-RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
+if [ "${usage_play:-false}" = "true" ]; then flavor="play"; Flavor="Play"; else flavor="foss"; Flavor="Foss"; fi
+DEBUG_APK="app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk"
+RELEASE_APK="app/build/outputs/apk/$flavor/release/app-$flavor-release.apk"
 
 # Prefer adb on PATH, else the default Android SDK location.
 if command -v adb >/dev/null 2>&1; then
@@ -37,11 +39,11 @@ if [ "$build" = "true" ]; then
     if [ "$want_release" = "true" ]; then
         variant="release"
         echo "Building release APK…"
-        ./gradlew assembleRelease
+        ./gradlew "assemble${Flavor}Release"
     else
         variant="debug"
         echo "Building debug APK…"
-        ./gradlew assembleDebug
+        ./gradlew "assemble${Flavor}Debug"
     fi
 elif [ "$want_release" = "true" ]; then
     variant="release"
@@ -56,7 +58,7 @@ else
     elif [ -f "$DEBUG_APK" ]; then
         variant="debug"
     else
-        echo "No APK found. Build one first: 'mise run deploy --build' (add --release for the signed build)." >&2
+        echo "No APK found. Build one first: 'mise run deploy --build' (add --release for the signed build, --play for the Play flavor)." >&2
         exit 1
     fi
 fi

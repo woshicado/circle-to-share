@@ -109,13 +109,12 @@
     <string name="btn_privacy">Privacy policy</string>
     <string name="btn_imprint">Imprint</string>
     <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary donation. It unlocks nothing.</string>
-    <string name="btn_kofi">Buy me a coffee!</string>
+    <string name="btn_support">Buy me a coffee!</string>
     <string name="btn_feedback">Send feedback</string>
     <string name="feedback_subject">Circle to Share feedback (v%1$s)</string>
     <string name="feedback_email" translatable="false">android@woshicado.eu</string>
     <string name="url_privacy" translatable="false">https://woshicado.eu/privacy-policy</string>
     <string name="url_imprint" translatable="false">https://woshicado.eu/imprint</string>
-    <string name="url_kofi" translatable="false">https://ko-fi.com/woshicado</string>
 
     <string name="accessibility_service_label">Circle to Share</string>
     <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it with the assistant gesture, the Quick Settings tile, or the app\'s floating button. You can then crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen; if enabled in the app. Nothing is captured until you trigger it, nothing is saved to your device unless you tap Save, and nothing ever leaves it.</string>

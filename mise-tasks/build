@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #MISE description="Build the debug APK"
 #USAGE flag "--release" help "Build the signed release APK instead of debug"
+#USAGE flag "--play" help "Build the Google Play flavor (Play Billing tips) instead of foss (Ko-fi link)"
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 
+if [ "${usage_play:-false}" = "true" ]; then flavor="play"; Flavor="Play"; else flavor="foss"; Flavor="Foss"; fi
 if [ "${usage_release:-false}" = "true" ]; then
-    ./gradlew assembleRelease
-    echo "APK: app/build/outputs/apk/release/app-release.apk"
+    ./gradlew "assemble${Flavor}Release"
+    echo "APK: app/build/outputs/apk/$flavor/release/app-$flavor-release.apk"
 else
-    ./gradlew assembleDebug
-    echo "APK: app/build/outputs/apk/debug/app-debug.apk"
+    ./gradlew "assemble${Flavor}Debug"
+    echo "APK: app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk"
 fi

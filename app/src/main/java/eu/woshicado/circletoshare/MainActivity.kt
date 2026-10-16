@@ -267,7 +267,7 @@ class MainActivity : AppCompatActivity() {
 
         setupQrColorField()
 
-        findViewById<Button>(R.id.btn_kofi).setOnClickListener { openUrl(R.string.url_kofi) }
+        setupSupportButton(findViewById(R.id.btn_support))
         findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
         findViewById<Button>(R.id.btn_privacy).setOnClickListener { openUrl(R.string.url_privacy) }
         findViewById<Button>(R.id.btn_imprint).setOnClickListener { openUrl(R.string.url_imprint) }

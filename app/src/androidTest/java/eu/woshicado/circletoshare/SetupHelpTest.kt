@@ -39,7 +39,7 @@ class SetupHelpTest {
 
     private fun ActivityScenario<MainActivity>.shownCard(): PopupWindow? {
         var card: PopupWindow? = null
-        onActivity { card = it.window.decorView.getTag(R.id.setup_help_card) as? PopupWindow }
+        onActivity { card = it.window.decorView.getTag(R.id.anchored_card) as? PopupWindow }
         return card
     }
 

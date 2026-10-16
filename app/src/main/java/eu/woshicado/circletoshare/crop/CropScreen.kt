@@ -1,5 +1,6 @@
 package eu.woshicado.circletoshare.crop
 
+import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -499,7 +500,12 @@ class CropScreen(context: Context) : FrameLayout(context) {
  * A plain TextView pins a compound drawable to its edge and centers only the
  * text — fine while the pill wraps its content, but a stacked [ActionRow]
  * stretches it, which would strand the icon at the far edge.
+ *
+ * A plain TextView, like the crop screen's other views: it is built in
+ * service contexts (assistant session, accessibility overlay) that carry no
+ * AppCompat theme, and needs nothing AppCompat would add.
  */
+@SuppressLint("AppCompatCustomView")
 private class PillButton(context: Context) : TextView(context) {
 
     // Placed at each draw rather than layout: a new label in a pill of fixed

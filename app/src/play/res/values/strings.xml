@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Play takes tips through its own billing (see Support.kt). -->
+    <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary tip. It unlocks nothing.</string>
+    <string name="tip_title">Buy me a coffee</string>
+    <string name="tip_small">Small coffee</string>
+    <string name="tip_medium">Coffee</string>
+    <string name="tip_large">Coffee and cake</string>
+    <string name="tip_thanks">Thank you for the coffee!</string>
+    <string name="tip_pending">Thank you! Google Play will finish the payment once it clears.</string>
+    <string name="tip_still_open">An earlier tip of this size is still being completed by Google Play. You can give another once it\'s done.</string>
+    <string name="tip_unavailable">Tips aren\'t available right now. Check that Google Play is signed in and online.</string>
+    <string name="tip_failed">The tip didn\'t go through. Please try again later.</string>
+</resources>

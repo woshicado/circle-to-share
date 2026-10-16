@@ -55,24 +55,28 @@ mise run deploy                   # install the newest existing APK (debug or re
 Or directly with Gradle:
 
 ```sh
-./gradlew assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleFossDebug
+adb install app/build/outputs/apk/foss/debug/app-foss-debug.apk
 ```
 
 Or open the project in Android Studio and hit Run.
 
+Two flavors differ only in how tips are taken: **`foss`** (GitHub Releases, F-Droid) links to Ko-fi and has no Google libraries; **`play`** (Google Play, `mise run bundle`, or `--play` on `build`/`deploy`) uses Play Billing, as Play forbids outside donation links. F-Droid must build `foss` (`gradle: [foss]`).
+
 ### Tests
 
 ```sh
-./gradlew testDebugUnitTest          # JVM: which QR payloads get an "Open" button, and as what
-./gradlew connectedDebugAndroidTest  # on a device/emulator: the crop overlay's touch gestures, the setup screen's color field
+./gradlew testFossDebugUnitTest          # JVM: which QR payloads get an "Open" button, and as what
+./gradlew connectedFossDebugAndroidTest  # on a device/emulator: the crop overlay's touch gestures, the setup screen's color field
+./gradlew connectedPlayDebugAndroidTest  # the same for the Play build, plus: its billing telemetry stays off
 ```
 
 The instrumented run stops the app's process when it finishes, after which Android leaves the accessibility service unbound — switch it off and on again in Settings → Accessibility before using the app on that device. While it runs it also switches **Detect QR codes** off and changes the **Highlight color**, and puts your settings back at the end.
 
 ## Permissions
 
-None. The APK declares **zero** permissions — no internet, storage, camera, mic, or location.
+None. The GitHub / F-Droid APK declares **zero** permissions — no internet, storage, camera, mic, or location.
+The Google Play build adds only `com.android.vending.BILLING` (no prompt), for the optional tips; it has no internet access either — the purchase is handled by the Play Store app.
 Screen capture is granted implicitly by the assistant/accessibility bindings, and sharing goes through a `FileProvider`, so nothing extra is needed.
 
 ## Setup on the phone

@@ -4,7 +4,9 @@ set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 
 GRADLE="app/build.gradle.kts"
-AAB="app/build/outputs/bundle/release/app-release.aab"
+# Only the play flavor goes to Google Play: tips through Play Billing, no
+# Ko-fi link (Play forbids outside donation links).
+AAB="app/build/outputs/bundle/playRelease/app-play-release.aab"
 
 # Without a keystore Gradle leaves the release unsigned (see
 # app/build.gradle.kts), which Play rejects.
@@ -14,7 +16,7 @@ if [ ! -f keystore.properties ] && [ -z "${KEYSTORE_FILE:-}" ]; then
     exit 1
 fi
 
-./gradlew bundleRelease
+./gradlew bundlePlayRelease
 
 version_name="$(grep -oE 'versionName = "[^"]+"' "$GRADLE" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 version_code="$(grep -oE 'versionCode = [0-9]+' "$GRADLE" | head -1 | grep -oE '[0-9]+')"
@@ -42,6 +44,13 @@ Next, in Play Console (https://play.google.com/console):
        Accessibility API declaration (with a video of the in-app disclosure),
        ads, app access, target audience, content rating.
     4. Store listing: texts and images from fastlane/metadata/android/en-US/.
+    5. Tips: Monetize with Play > Products > One-time products (older
+       consoles: In-app products) > create three
+       products with the ids tip_small, tip_medium, tip_large (the app shows
+       them by price and labels them itself; set any prices you like), and
+       activate them. They only appear once a build with BILLING is uploaded.
+       To test without being charged: Settings > License testing > add your
+       Google account.
 
   Every release
     1. Test and release > Testing > Internal testing (or Closed testing) >
