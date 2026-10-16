@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.hardware.display.DisplayManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.LocaleList
@@ -27,6 +28,7 @@ import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
 import eu.woshicado.circletoshare.crop.CropScreen
+import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
 import java.io.IOException
 
@@ -134,7 +136,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         cropScreenBuiltFor = uiConfig()
         return CropScreen(context).apply {
             callbacks = object : CropScreen.Callbacks {
-                override fun onDeliver(share: Boolean, rect: Rect?) = deliver(share, rect)
+                override fun onDeliver(action: Delivery, rect: Rect?) = deliver(action, rect)
                 override fun onCancel() = hide()
             }
         }
@@ -490,23 +492,30 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         cropScreen.setBitmap(software, pendingSnap)
     }
 
-    private fun deliver(share: Boolean, rect: Rect?) {
+    private fun deliver(action: Delivery, rect: Rect?) {
         val bitmap = screenshot ?: return
         val delivered = try {
-            ShareHelper.deliver(context, bitmap, rect, share)
+            ShareHelper.deliver(context, bitmap, rect, action)
         } catch (e: IOException) {
             fail(R.string.error_save_failed)
             return
         } catch (e: Exception) {
             fail(R.string.error_capture_failed)
             return
-        }
-        if (delivered) hide()
+        } ?: return
+        // A share or a copy shows for itself (the share sheet, the system's
+        // clipboard notice); a save has to be told — and offers to show it.
+        if (action == Delivery.SAVE) say(R.string.saved, SAVED_MESSAGE_MS, openOnTap = delivered) else hide()
     }
 
-    private fun fail(messageRes: Int) {
+    private fun fail(messageRes: Int) = say(messageRes, MESSAGE_MS)
+
+    /** Say [messageRes] and close: in the service's notice if it runs, else
+     *  in place of the tool for [shownForMs]. With [openOnTap], a tap on the
+     *  message opens that saved image. */
+    private fun say(messageRes: Int, shownForMs: Long, openOnTap: Uri? = null) {
         if (ScreenshotAccessibilityService.instance != null) {
-            ScreenshotAccessibilityService.notify(context, messageRes)
+            ScreenshotAccessibilityService.notify(context, messageRes, openOnTap)
             hide()
             return
         }
@@ -516,9 +525,19 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // touch, which the screen passes on as a cancel.
         if (messageShowing) return
         messageShowing = true
-        cropScreen.showMessage(context.getString(messageRes))
+        val message = context.getString(messageRes)
+        if (openOnTap != null) {
+            cropScreen.showMessage(ShareHelper.withViewAction(context, message)) {
+                // Closed after, not before: hiding first takes the session's
+                // window (and the right to start an activity) with it.
+                ShareHelper.view(context, openOnTap)
+                hide()
+            }
+        } else {
+            cropScreen.showMessage(message)
+        }
         val gen = showGeneration
-        ui.postDelayed({ if (gen == showGeneration && visible) hide() }, MESSAGE_MS)
+        ui.postDelayed({ if (gen == showGeneration && visible) hide() }, shownForMs)
     }
 
     private companion object {
@@ -526,6 +545,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
 
         // How long a message shown in place of the tool stays up.
         const val MESSAGE_MS = 5000L
+        // Shorter for "saved": it only confirms what was asked for (but
+        // long enough to tap it, to view the image).
+        const val SAVED_MESSAGE_MS = 3500L
 
         // How long a lock screen that was up at the show gets to finish
         // going away (the tile's values for the same wait; scaled with the

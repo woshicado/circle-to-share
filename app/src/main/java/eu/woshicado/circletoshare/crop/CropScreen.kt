@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.RectF
@@ -25,18 +26,19 @@ import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.qr.QrCode
 import eu.woshicado.circletoshare.qr.QrDetector
 import eu.woshicado.circletoshare.qr.qrOpenUri
+import eu.woshicado.circletoshare.share.Delivery
 import kotlin.math.ceil
 
 /**
  * The full crop overlay UI — frozen screenshot, draggable crop rectangle, and
- * the Cancel/Copy/Share pill bar. Shared by both the assistant session and the
+ * the Cancel-or-Save/Copy/Share pill bar. Shared by both the assistant session and the
  * floating-bubble path so the two behave identically.
  */
 class CropScreen(context: Context) : FrameLayout(context) {
 
     interface Callbacks {
         /** [rect] is in bitmap coordinates, or null to share the whole screen. */
-        fun onDeliver(share: Boolean, rect: Rect?)
+        fun onDeliver(action: Delivery, rect: Rect?)
         fun onCancel()
     }
 
@@ -52,6 +54,8 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private val cropView = CropOverlayView(context)
     private val hintView: TextView
     private val buttonBar: ActionRow
+    // Cancel while nothing is selected, Save once something is.
+    private val dismissButton: TextView
     private val shareButton: TextView
     private val qrPanel: LinearLayout
     private val qrPanelText: TextView
@@ -69,18 +73,18 @@ class CropScreen(context: Context) : FrameLayout(context) {
     // The tapped code whose actions the panel is showing.
     private var activeQr: QrCode? = null
 
+    private var hasSelection = false
+
     init {
         cropView.visibility = View.GONE
         cropView.listener = object : CropOverlayView.Listener {
             override fun onSelectionChanged(hasSelection: Boolean) {
-                shareButton.text = context.getString(
-                    if (hasSelection) R.string.action_share else R.string.action_share_full
-                )
+                showSelectionActions(hasSelection)
                 hintView.visibility = if (hasSelection) View.GONE else View.VISIBLE
             }
 
-            override fun onDoubleTapInside() = deliver(share = true)
-            override fun onLongPressInside() = deliver(share = false)
+            override fun onDoubleTapInside() = deliver(Delivery.SHARE)
+            override fun onLongPressInside() = deliver(Delivery.COPY)
             override fun onDoubleTapEmpty() {
                 callbacks?.onCancel()
             }
@@ -98,6 +102,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             background = pill(Color.argb(200, 30, 30, 30), 24, outlined = true)
             setPadding(dp(20), dp(10), dp(20), dp(10))
+            compoundDrawablePadding = dp(ICON_PADDING_DP)
+            compoundDrawableTintList = ColorStateList.valueOf(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
             visibility = View.GONE
         }
         addView(
@@ -115,16 +122,25 @@ class CropScreen(context: Context) : FrameLayout(context) {
         )
 
         buttonBar = ActionRow(context).apply { visibility = View.GONE }
-        val cancel = pillButton(context.getString(R.string.action_cancel), filled = false) {
-            callbacks?.onCancel()
+        dismissButton = pillButton(
+            context.getString(R.string.action_cancel), R.drawable.ic_close, filled = false
+        ) {
+            if (hasSelection) deliver(Delivery.SAVE) else callbacks?.onCancel()
         }
-        val copy = pillButton(context.getString(R.string.action_copy), filled = false) {
-            deliver(share = false)
+        val copy = pillButton(
+            context.getString(R.string.action_copy), R.drawable.ic_copy, filled = false
+        ) {
+            deliver(Delivery.COPY)
         }
-        shareButton = pillButton(context.getString(R.string.action_share_full), filled = true) {
-            deliver(share = true)
+        shareButton = pillButton(
+            context.getString(R.string.action_share_full), R.drawable.ic_share, filled = true
+        ) {
+            deliver(Delivery.SHARE)
         }
-        buttonBar.addAction(cancel)
+        buttonBar.addAction(
+            dismissButton,
+            context.getString(R.string.action_cancel), context.getString(R.string.action_save)
+        )
         buttonBar.addAction(copy)
         // (Both of its labels: the row must not re-arrange itself every time
         // a selection comes or goes.)
@@ -161,10 +177,14 @@ class CropScreen(context: Context) : FrameLayout(context) {
             // Spoken by a screen reader when it appears.
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
-        qrOpenButton = pillButton(context.getString(R.string.qr_open), filled = true) {
+        qrOpenButton = pillButton(
+            context.getString(R.string.qr_open), R.drawable.ic_open_in_new, filled = true
+        ) {
             activeQr?.let { openQr(it.text) }
         }
-        val qrCopyButton = pillButton(context.getString(R.string.action_copy), filled = false) {
+        val qrCopyButton = pillButton(
+            context.getString(R.string.action_copy), R.drawable.ic_copy, filled = false
+        ) {
             activeQr?.let { copyQr(it.text) }
         }
         qrPanel = LinearLayout(context).apply {
@@ -253,17 +273,19 @@ class CropScreen(context: Context) : FrameLayout(context) {
         cropView.visibility = View.VISIBLE
         hintView.visibility = View.VISIBLE
         buttonBar.visibility = View.VISIBLE
-        shareButton.text = context.getString(R.string.action_share_full)
+        showSelectionActions(false)
 
         // Offer to restore the last crop only when it fits this exact capture.
         pendingRestore = eu.woshicado.circletoshare.Prefs
             .getLastCropFor(context, bitmap.width, bitmap.height)
         if (pendingRestore != null) {
             hintView.setText(R.string.crop_hint_restore)
+            hintView.setCompoundDrawablesRelative(icon(R.drawable.ic_restore), null, null, null)
             hintView.isClickable = true
             hintView.setOnClickListener { pendingRestore?.let { cropView.applyCropRect(it) } }
         } else {
             hintView.setText(if (freeform) R.string.crop_hint_freeform else R.string.crop_hint)
+            hintView.setCompoundDrawablesRelative(null, null, null, null)
             // In this order: setOnClickListener makes a view clickable, even
             // when handed null. A clickable hint swallows every touch that
             // starts on it — no crop could begin there, and a QR code
@@ -276,9 +298,10 @@ class CropScreen(context: Context) : FrameLayout(context) {
     /**
      * Show [message] in place of the tool — for a host that has nothing to
      * crop and nowhere else to say why. A touch anywhere asks the host to
-     * close ([Callbacks.onCancel]). Undone by [setBitmap] and [clear].
+     * close ([Callbacks.onCancel]); with [onTap], a touch on the message
+     * itself runs that instead. Undone by [setBitmap] and [clear].
      */
-    fun showMessage(message: String) {
+    fun showMessage(message: CharSequence, onTap: (() -> Unit)? = null) {
         // Nothing behind the message — not the black the picture stood on,
         // if there was one: the screen underneath shows through instead.
         background = null
@@ -287,8 +310,10 @@ class CropScreen(context: Context) : FrameLayout(context) {
         cropView.visibility = View.GONE
         buttonBar.visibility = View.GONE
         hintView.text = message
-        hintView.setOnClickListener(null)
-        hintView.isClickable = false
+        hintView.setCompoundDrawablesRelative(null, null, null, null)
+        // (In this order — see setBitmap.)
+        hintView.setOnClickListener(onTap?.let { tap -> View.OnClickListener { tap() } })
+        hintView.isClickable = onTap != null
         hintView.visibility = View.VISIBLE
         setOnClickListener { callbacks?.onCancel() }
     }
@@ -386,7 +411,21 @@ class CropScreen(context: Context) : FrameLayout(context) {
         callbacks?.onCancel()
     }
 
-    private fun deliver(share: Boolean) {
+    /** The bar's labels (and icons) for a selection present or not. */
+    private fun showSelectionActions(selected: Boolean) {
+        hasSelection = selected
+        shareButton.text = context.getString(
+            if (selected) R.string.action_share else R.string.action_share_full
+        )
+        dismissButton.text = context.getString(
+            if (selected) R.string.action_save else R.string.action_cancel
+        )
+        dismissButton.setCompoundDrawablesRelative(
+            icon(if (selected) R.drawable.ic_save else R.drawable.ic_close), null, null, null
+        )
+    }
+
+    private fun deliver(action: Delivery) {
         val rect = cropView.getCropRect()
         // Remember an actual selection so it can be restored next time; a
         // full-screen share (null rect) leaves the previous memory untouched.
@@ -395,14 +434,24 @@ class CropScreen(context: Context) : FrameLayout(context) {
                 eu.woshicado.circletoshare.Prefs.saveLastCrop(context, rect, w, h)
             }
         }
-        callbacks?.onDeliver(share, rect)
+        callbacks?.onDeliver(action, rect)
     }
 
-    private fun pillButton(label: String, filled: Boolean, onClick: () -> Unit): TextView =
-        TextView(context).apply {
+    /** [res] at the size the pills' icons share, ready for a compound
+     *  drawable (tinted by the view it goes on). */
+    private fun icon(res: Int) = context.getDrawable(res)!!.mutate().apply {
+        setBounds(0, 0, dp(ICON_SIZE_DP), dp(ICON_SIZE_DP))
+    }
+
+    private fun pillButton(label: String, iconRes: Int, filled: Boolean, onClick: () -> Unit): TextView =
+        PillButton(context).apply {
             text = label
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-            setTextColor(if (filled) Color.BLACK else Color.WHITE)
+            val content = if (filled) Color.BLACK else Color.WHITE
+            setTextColor(content)
+            setCompoundDrawablesRelative(icon(iconRes), null, null, null)
+            compoundDrawablePadding = dp(ICON_PADDING_DP)
+            compoundDrawableTintList = ColorStateList.valueOf(content)
             // Pressed feedback, clipped to the pill's own shape (no mask
             // layer: the ripple is masked by the content beneath it).
             background = RippleDrawable(
@@ -417,7 +466,8 @@ class CropScreen(context: Context) : FrameLayout(context) {
             )
             gravity = Gravity.CENTER
             minHeight = dp(48)
-            setPadding(dp(24), dp(13), dp(24), dp(13))
+            // Less on the icon's side, as Material's buttons with an icon.
+            setPaddingRelative(dp(18), dp(13), dp(24), dp(13))
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
@@ -439,6 +489,37 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private companion object {
         const val BAR_BOTTOM_MARGIN_DP = 48
         const val QR_PANEL_GAP_DP = 24
+        const val ICON_SIZE_DP = 18
+        const val ICON_PADDING_DP = 8
+    }
+}
+
+/**
+ * A pill whose leading icon stays beside its label, the two centered as one.
+ * A plain TextView pins a compound drawable to its edge and centers only the
+ * text — fine while the pill wraps its content, but a stacked [ActionRow]
+ * stretches it, which would strand the icon at the far edge.
+ */
+private class PillButton(context: Context) : TextView(context) {
+
+    // Placed at each draw rather than layout: a new label in a pill of fixed
+    // width (stacked) is only redrawn, not laid out again.
+    override fun onDraw(canvas: Canvas) {
+        placeIcon()
+        super.onDraw(canvas)
+    }
+
+    private fun placeIcon() {
+        val icon = compoundDrawablesRelative[0] ?: return
+        // The room beside the label, split evenly: the label is centered in
+        // the space after the icon, so the icon moves along by half of it.
+        // (Bounds, not padding: moving the drawing needs no new layout.)
+        val textArea = width - compoundPaddingLeft - compoundPaddingRight
+        val textWidth = ceil(paint.measureText(text.toString())).toInt().coerceAtMost(textArea)
+        val shift = (textArea - textWidth) / 2
+        val offset = if (layoutDirection == LAYOUT_DIRECTION_RTL) -shift else shift
+        val size = icon.bounds.width()
+        if (icon.bounds.left != offset) icon.setBounds(offset, 0, offset + size, icon.bounds.height())
     }
 }
 
@@ -480,7 +561,9 @@ private class ActionRow(context: Context) : LinearLayout(context) {
             val button = getChildAt(i) as TextView
             val widest = (labels[button].orEmpty() + button.text.toString())
                 .maxOf { button.paint.measureText(it) }
-            width += button.paddingLeft + button.paddingRight + ceil(widest).toInt() + 2 * dp(ITEM_MARGIN_DP)
+            // (Compound padding: the padding plus the icon beside the label.)
+            width += button.compoundPaddingLeft + button.compoundPaddingRight +
+                ceil(widest).toInt() + 2 * dp(ITEM_MARGIN_DP)
         }
         return width
     }

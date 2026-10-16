@@ -14,6 +14,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.qr.QrCode
+import eu.woshicado.circletoshare.share.Delivery
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -111,11 +112,55 @@ class CropScreenTest {
     }
 
     @Test
+    fun aSelectionTurnsCancelIntoSave() {
+        val delivered = mutableListOf<Delivery>()
+        var cancelled = 0
+        onMain {
+            screen.callbacks = object : CropScreen.Callbacks {
+                override fun onDeliver(action: Delivery, rect: Rect?) {
+                    delivered += action
+                }
+                override fun onCancel() {
+                    cancelled++
+                }
+            }
+        }
+        val (dismiss, _, _) = barButtons()
+
+        onMain { findCropView(screen)!!.applyCropRect(Rect(100, 200, 600, 900)) }
+        assertEquals(context.getString(R.string.action_save), dismiss.text.toString())
+        // Delivering remembers the crop for this capture size, which would
+        // turn the other tests' hint into the restore offer: put back what
+        // was remembered before. ("cts" is the app's preference file.)
+        val prefs = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
+        val remembered = prefs.all.filterKeys { it.startsWith("last_crop_") }
+        try {
+            onMain { dismiss.performClick() }
+        } finally {
+            prefs.edit().apply {
+                prefs.all.keys.filter { it.startsWith("last_crop_") }.forEach { remove(it) }
+                remembered.forEach { (key, value) -> putInt(key, value as Int) }
+            }.commit()
+        }
+        assertEquals("Save saves", listOf(Delivery.SAVE), delivered)
+        assertEquals("and doesn't cancel", 0, cancelled)
+
+        // A new capture starts without a selection: Cancel again.
+        onMain {
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            dismiss.performClick()
+        }
+        assertEquals(context.getString(R.string.action_cancel), dismiss.text.toString())
+        assertEquals(1, cancelled)
+        assertEquals(1, delivered.size)
+    }
+
+    @Test
     fun anOpenThatFails_saysSoInThePanelAndKeepsTheToolOpen() {
         var cancelled = 0
         onMain {
             screen.callbacks = object : CropScreen.Callbacks {
-                override fun onDeliver(share: Boolean, rect: Rect?) = Unit
+                override fun onDeliver(action: Delivery, rect: Rect?) = Unit
                 override fun onCancel() {
                     cancelled++
                 }
@@ -266,7 +311,7 @@ class CropScreenTest {
         var cancelled = 0
         onMain {
             screen.callbacks = object : CropScreen.Callbacks {
-                override fun onDeliver(share: Boolean, rect: Rect?) = Unit
+                override fun onDeliver(action: Delivery, rect: Rect?) = Unit
                 override fun onCancel() {
                     cancelled++
                 }

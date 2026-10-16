@@ -1,6 +1,9 @@
-Circle to Share captures the screen from anywhere, lets you crop it, and shares or copies the result — without ever saving anything to your device.
+Circle to Share captures the screen from anywhere, lets you crop it, and shares, copies or saves the result — nothing is kept on your device unless you ask.
 
-Trigger it, the screen freezes, and you can circle what you want. Then tap Share or Copy. The crop lives in the app's private cache only and never lands in your gallery.
+Trigger it, the screen freezes, and you can circle what you want.
+Then tap Share, Copy or Save.
+A shared or copied crop lives in the app's private cache only and never lands in your gallery;
+Save puts it into your Screenshots folder.
 
 How to open it (use any of them):
 
@@ -12,7 +15,7 @@ How to open it (use any of them):
 Highlights:
 
 * No permissions: no internet, storage, camera, microphone, or location.
-* Nothing is saved to your device.
+* Nothing is saved to your device (unless you tap Save).
 * QR codes in the capture are highlighted, and can be opened, copied, or shared.
 * Optional snapping: crop edges align with the buttons, cards and images that were on screen.
 

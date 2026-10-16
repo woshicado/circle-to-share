@@ -16,7 +16,9 @@ Grab the screen from anywhere, crop it, share it — without saving anything to 
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/5.png" width="24%" alt="Make it work your way" />
 </p>
 
-Trigger it → the screen freezes → circle what you want → **Share** or **Copy**. The crop lives only in the app's private cache (auto-cleaned after an hour); nothing ever hits your gallery.
+Trigger it → the screen freezes → circle what you want → **Share**, **Copy** or **Save**.
+A shared or copied crop lives only in the app's private cache (auto-cleaned after an hour);
+only **Save** puts it in your gallery (`Pictures/Screenshots`).
 
 The loop's outline becomes a crop box you can resize and reposition. Prefer dragging a rectangle directly? Turn off **Circle to crop** in the app.
 
@@ -36,6 +38,7 @@ Use any of these:
 - The system hands assistants a screenshot of the current screen (`onHandleScreenshot`). On devices/ROMs that don't provide it to third-party assistants, an **accessibility service** (`AccessibilityService.takeScreenshot`) captures instead.
 - The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
+- **Save** adds the crop to `Pictures/Screenshots` through `MediaStore`, which needs no storage permission either.
 - **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture, solely to align the crop box — nothing is stored or transmitted. This is why the accessibility service declares the "retrieve window content" capability; leave the toggle off and the bounds are never read at all.
 
 ## Build & install

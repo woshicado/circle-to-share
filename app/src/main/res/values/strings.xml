@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Circle to Share</string>
 
-    <string name="setup_intro">Grab the screen from anywhere, crop it, and share it. Nothing is saved to your device.</string>
+    <string name="setup_intro">Grab the screen from anywhere, crop it, and share it. Nothing is saved to your device → nothing to clean up.</string>
 
     <string name="setup_step1_title">1. Set as your assistant (optional)</string>
     <string name="setup_step1_body">Choose Circle to Share as the digital assistant app (Default digital assistant app > Circle to Share). This makes the assistant gesture open the crop overlay (e.g., press and hold the power button, or swipe up from a bottom corner). If a \"Use screen data\" toggle is shown there, enable it.</string>
@@ -79,8 +79,11 @@
     <string name="action_copy">Copy</string>
     <string name="action_share">Share</string>
     <string name="action_share_full">Share full</string>
+    <string name="action_save">Save</string>
     <string name="share_title">Share screenshot</string>
     <string name="copied">Copied to clipboard</string>
+    <string name="saved">Saved to Screenshots</string>
+    <string name="action_view">View</string>
 
     <string name="error_no_capture">Couldn\'t get a screenshot. Enable the fallback in the Circle to Share app, or turn on \"Use screen data\" in assistant settings.</string>
     <string name="error_capture_failed">Screen capture failed (secure screen?)</string>
@@ -96,7 +99,7 @@
     <string name="disclosure_access_title">What it accesses</string>
     <string name="disclosure_access_body">• A screenshot of your screen at the moment you trigger a capture.\n\n• The positions and sizes of the elements on screen (not their text or content) at that same moment, and only while \"Snap to screen content\" is switched on.\n\n• Notices from the system that a window has opened or changed, with the window\'s title and the app it belongs to, and the positions of system windows to recognize the lock screen, the power menu and the notification shade, so the floating button and the crop tool get out of their way.</string>
     <string name="disclosure_use_title">How it is used</string>
-    <string name="disclosure_use_body">• Everything is processed on this device, in memory, to show you the crop tool.\n\n• The part you share or copy is written to the app\'s private cache so the receiving app can read it. Files older than an hour are deleted the next time you capture.\n\n• An image leaves Circle to Share only when you tap Share or Copy, and only to the app you choose. The app has no internet permission.\n\n• The service never taps, types or changes settings for you. Its only action is closing the notification shade when you use the Quick Settings tile.</string>
+    <string name="disclosure_use_body">• Everything is processed on this device, in memory, to show you the crop tool.\n\n• The part you share or copy is written to the app\'s private cache so the receiving app can read it. Files older than an hour are deleted the next time you capture.\n\n• An image leaves Circle to Share only when you tap Share or Copy, and only to the app you choose, or when you tap Save, which puts it in your gallery (below Screenshots). The app has no internet permission.\n\n• The service never taps, types or changes settings for you. Its only action is closing the notification shade when you use the Quick Settings tile.</string>
     <string name="disclosure_choice_title">Your choice</string>
     <string name="disclosure_choice_body">Tap Agree to allow this. You then switch the service on in Android\'s accessibility settings, and can switch it off there at any time.\n\nTap No thanks to keep using Circle to Share with the assistant gesture only. The tile, the floating button and snapping stay off, and a service that is already on is switched off.</string>
     <string name="disclosure_agree">Agree</string>
@@ -115,5 +118,5 @@
     <string name="url_kofi" translatable="false">https://ko-fi.com/woshicado</string>
 
     <string name="accessibility_service_label">Circle to Share</string>
-    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it with the assistant gesture, the Quick Settings tile, or the app\'s floating button. You can then crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen; if enabled in the app. Nothing is captured until you trigger it, nothing is saved to your device, and nothing ever leaves it.</string>
+    <string name="accessibility_service_description">Lets Circle to Share capture the screen when you trigger it with the assistant gesture, the Quick Settings tile, or the app\'s floating button. You can then crop and share it. Screen content (element positions) is read only at the moment of capture, and only to align the crop box with what\'s on screen; if enabled in the app. Nothing is captured until you trigger it, nothing is saved to your device unless you tap Save, and nothing ever leaves it.</string>
 </resources>

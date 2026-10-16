@@ -18,6 +18,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -47,6 +48,7 @@ import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
+import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -99,11 +101,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
          * never may; and before that, they are drawn beneath the crop
          * overlay. So wherever this service is running it shows the message
          * itself, in a window of its own, and a toast is only the fallback.
+         *
+         * With [openOnTap], the notice offers to view that saved image (the
+         * toast can't: it takes no touches).
          */
-        fun notify(context: Context, messageRes: Int) {
+        fun notify(context: Context, messageRes: Int, openOnTap: Uri? = null) {
             val service = instance
             if (service != null) {
-                service.showNotice(context.getString(messageRes))
+                service.showNotice(context.getString(messageRes), openOnTap)
             } else {
                 Toast.makeText(context, messageRes, Toast.LENGTH_LONG).show()
             }
@@ -142,8 +147,10 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // play its collapse animation first, or the shot is of the panel.
         private const val BUBBLE_HIDE_DELAY_MS = 80L
 
-        // How long a notice stays up — a long toast's time.
+        // How long a notice stays up — a long toast's time — and a little
+        // longer for one that can be tapped, to leave time to reach it.
         private const val NOTICE_MS = 3500L
+        private const val NOTICE_ACTION_MS = 5000L
 
         // How long after a window event to look at the screen's state a
         // second time. Events are delivered the moment they happen (see
@@ -727,13 +734,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /**
      * A short message in a window of this service's own (see [notify]): the
      * same dark pill as the crop tool's hint, near the bottom of the screen,
-     * gone again by itself. It takes no touches and no focus.
+     * gone again by itself. It takes no focus, and no touches unless
+     * [openOnTap] is given: then a tap on it opens that saved image.
      */
-    private fun showNotice(message: String) = ui.post {
+    private fun showNotice(message: String, openOnTap: Uri? = null): Boolean = ui.post {
         dropNotice()
         val display = displayMetrics().bounds
         val notice = TextView(this).apply {
-            text = message
+            text = if (openOnTap != null) ShareHelper.withViewAction(context, message) else message
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             gravity = Gravity.CENTER
@@ -744,13 +752,24 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             }
             setPadding(dp(20), dp(12), dp(20), dp(12))
             maxWidth = display.width() - 2 * dp(24)
+            if (openOnTap != null) {
+                setOnClickListener {
+                    dropNotice()
+                    if (!ShareHelper.view(context, openOnTap)) {
+                        showNotice(getString(R.string.qr_open_failed))
+                    }
+                }
+            }
         }
+        // (Not focusable keeps it from taking keys; touches outside its own
+        // bounds still go to whatever is beneath.)
+        var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        if (openOnTap == null) flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            flags,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
@@ -761,7 +780,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // Guarded like addBubble: the window token dies with the service.
         if (runCatching { windowManager.addView(notice, params) }.isFailure) return@post
         noticeView = notice
-        ui.postDelayed(removeNotice, NOTICE_MS)
+        ui.postDelayed(removeNotice, if (openOnTap != null) NOTICE_ACTION_MS else NOTICE_MS)
     }
 
     /** Take the notice down now, ahead of its timer. */
@@ -1255,17 +1274,21 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // arrow keys from ever reaching its buttons.)
         val screen = CropScreen(this)
         screen.callbacks = object : CropScreen.Callbacks {
-            override fun onDeliver(share: Boolean, rect: Rect?) {
-                val ok = try {
-                    ShareHelper.deliver(this@ScreenshotAccessibilityService, bitmap, rect, share)
+            override fun onDeliver(action: Delivery, rect: Rect?) {
+                val delivered = try {
+                    ShareHelper.deliver(this@ScreenshotAccessibilityService, bitmap, rect, action)
                 } catch (e: IOException) {
                     showNotice(getString(R.string.error_save_failed))
-                    true
+                    dismissOverlay()
+                    return
                 } catch (e: Exception) {
                     showNotice(getString(R.string.error_capture_failed))
-                    true
-                }
-                if (ok) dismissOverlay()
+                    dismissOverlay()
+                    return
+                } ?: return
+                dismissOverlay()
+                // (Shares and copies show for themselves; see AssistSession.deliver.)
+                if (action == Delivery.SAVE) showNotice(getString(R.string.saved), openOnTap = delivered)
             }
 
             override fun onCancel() = dismissOverlay()
