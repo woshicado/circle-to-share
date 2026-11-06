@@ -10,6 +10,14 @@
 Grab the screen from anywhere, crop it, share it — without saving anything to your device.
 
 <p>
+  <a href="https://play.google.com/store/apps/details?id=eu.woshicado.circletoshare"><img src=".github/badges/get-it-on-google-play.svg" height="56" alt="Get it on Google Play" /></a>
+  <a href="https://f-droid.org/packages/eu.woshicado.circletoshare/"><img src=".github/badges/get-it-on-fdroid.svg" height="56" alt="Get it on F-Droid" /></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22eu.woshicado.circletoshare%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fwoshicado%2Fcircle-to-share%22%2C%22author%22%3A%22woshicado%22%2C%22name%22%3A%22Circle%20to%20Share%22%7D"><img src=".github/badges/get-it-on-obtainium.png" height="56" alt="Get it on Obtainium" /></a>
+</p>
+
+Or grab the APK from the [latest release](https://github.com/woshicado/circle-to-share/releases/latest).
+
+<p>
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="24%" alt="Circle what you want" />
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="24%" alt="Adjust, then share or copy" />
   <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="24%" alt="QR codes are spotted for you" />
@@ -117,3 +125,5 @@ Circle to Share is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the Free
 Software Foundation, either version 3 of the License, or (at your option)
 any later version. See [LICENSE](LICENSE).
+
+<sub>Google Play and the Google Play logo are trademarks of Google LLC.</sub>
