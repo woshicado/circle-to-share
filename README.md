@@ -63,20 +63,20 @@ mise run deploy                   # install the newest existing APK (debug or re
 Or directly with Gradle:
 
 ```sh
-./gradlew assembleFossDebug
-adb install app/build/outputs/apk/foss/debug/app-foss-debug.apk
+./gradlew assembleDebug
+adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Or open the project in Android Studio and hit Run.
 
-Two flavors differ only in how tips are taken: **`foss`** (GitHub Releases, F-Droid) links to Ko-fi and has no Google libraries; **`play`** (Google Play, `mise run bundle`, or `--play` on `build`/`deploy`) uses Play Billing, as Play forbids outside donation links. F-Droid must build `foss` (`gradle: [foss]`).
+Two builds differ only in how tips are taken: the default **foss** build (GitHub Releases, F-Droid) links to Ko-fi and has no Google libraries; the **`play`** flavor (Google Play: `-Pplay` on Gradle, `mise run bundle`, or `--play` on `build`/`deploy`) uses Play Billing.
 
 ### Tests
 
 ```sh
-./gradlew testFossDebugUnitTest          # JVM: which QR payloads get an "Open" button, and as what
-./gradlew connectedFossDebugAndroidTest  # on a device/emulator: the crop overlay's touch gestures, the setup screen's color field
-./gradlew connectedPlayDebugAndroidTest  # the same for the Play build, plus: its billing telemetry stays off
+./gradlew testDebugUnitTest                     # JVM: which QR payloads get an "Open" button, and as what
+./gradlew connectedDebugAndroidTest             # on a device/emulator: the crop overlay's touch gestures, the setup screen's color field
+./gradlew -Pplay connectedPlayDebugAndroidTest  # the same for the Play build, plus: its billing telemetry stays off
 ```
 
 The instrumented run stops the app's process when it finishes, after which Android leaves the accessibility service unbound — switch it off and on again in Settings → Accessibility before using the app on that device. While it runs it also switches **Detect QR codes** off and changes the **Highlight color**, and puts your settings back at the end.

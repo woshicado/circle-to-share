@@ -5,11 +5,16 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 
-if [ "${usage_play:-false}" = "true" ]; then flavor="play"; Flavor="Play"; else flavor="foss"; Flavor="Foss"; fi
-if [ "${usage_release:-false}" = "true" ]; then
-    ./gradlew "assemble${Flavor}Release"
-    echo "APK: app/build/outputs/apk/$flavor/release/app-$flavor-release.apk"
+# foss is the flavorless default build; -Pplay adds the play flavor.
+if [ "${usage_play:-false}" = "true" ]; then
+    gradle=(./gradlew -Pplay); Flavor="Play"; out="play/"; name="play-"
 else
-    ./gradlew "assemble${Flavor}Debug"
-    echo "APK: app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk"
+    gradle=(./gradlew); Flavor=""; out=""; name=""
+fi
+if [ "${usage_release:-false}" = "true" ]; then
+    "${gradle[@]}" "assemble${Flavor}Release"
+    echo "APK: app/build/outputs/apk/${out}release/app-${name}release.apk"
+else
+    "${gradle[@]}" "assemble${Flavor}Debug"
+    echo "APK: app/build/outputs/apk/${out}debug/app-${name}debug.apk"
 fi

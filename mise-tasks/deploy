@@ -7,9 +7,14 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
 
-if [ "${usage_play:-false}" = "true" ]; then flavor="play"; Flavor="Play"; else flavor="foss"; Flavor="Foss"; fi
-DEBUG_APK="app/build/outputs/apk/$flavor/debug/app-$flavor-debug.apk"
-RELEASE_APK="app/build/outputs/apk/$flavor/release/app-$flavor-release.apk"
+# foss is the flavorless default build; -Pplay adds the play flavor.
+if [ "${usage_play:-false}" = "true" ]; then
+    gradle=(./gradlew -Pplay); Flavor="Play"; out="play/"; name="play-"
+else
+    gradle=(./gradlew); Flavor=""; out=""; name=""
+fi
+DEBUG_APK="app/build/outputs/apk/${out}debug/app-${name}debug.apk"
+RELEASE_APK="app/build/outputs/apk/${out}release/app-${name}release.apk"
 
 # Prefer adb on PATH, else the default Android SDK location.
 if command -v adb >/dev/null 2>&1; then
@@ -39,11 +44,11 @@ if [ "$build" = "true" ]; then
     if [ "$want_release" = "true" ]; then
         variant="release"
         echo "Building release APK…"
-        ./gradlew "assemble${Flavor}Release"
+        "${gradle[@]}" "assemble${Flavor}Release"
     else
         variant="debug"
         echo "Building debug APK…"
-        ./gradlew "assemble${Flavor}Debug"
+        "${gradle[@]}" "assemble${Flavor}Debug"
     fi
 elif [ "$want_release" = "true" ]; then
     variant="release"

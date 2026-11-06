@@ -21,6 +21,9 @@ fun signingValue(propKey: String, envKey: String): String? =
 val releaseStoreFile = signingValue("storeFile", "KEYSTORE_FILE")
 val hasReleaseSigning = releaseStoreFile != null
 
+// -Pplay builds the Google Play flavor; without it, the foss build.
+val playBuild = providers.gradleProperty("play").isPresent
+
 android {
     namespace = "eu.woshicado.circletoshare"
     compileSdk = 36
@@ -38,10 +41,18 @@ android {
     // Where the build is distributed decides how tips are taken: Google Play
     // requires its own billing and forbids outside donation links; F-Droid
     // and GitHub builds keep the Ko-fi link and no Google libraries.
-    flavorDimensions += "store"
-    productFlavors {
-        create("foss") { dimension = "store" }
-        create("play") { dimension = "store" }
+    // The foss build is the default and has no flavors, so F-Droid's recipe
+    // (`gradle: yes`, i.e. plain assembleRelease) finds its APK in
+    // build/outputs/apk/release/ for every new tag. -Pplay swaps src/foss for
+    // the play flavor (src/play, androidTestPlay).
+    if (playBuild) {
+        flavorDimensions += "store"
+        productFlavors {
+            create("play") { dimension = "store" }
+        }
+    } else {
+        sourceSets["main"].java.srcDir("src/foss/java")
+        sourceSets["main"].res.srcDir("src/foss/res")
     }
 
     signingConfigs {
@@ -99,8 +110,10 @@ dependencies {
     // Pure-Java QR decoding. No native libs, no Play Services, and offline
     implementation("com.google.zxing:core:3.5.3")
     // Play build only (see src/play). After changing the version, run
-    // ./gradlew connectedPlayDebugAndroidTest: its telemetry must stay off.
-    "playImplementation"("com.android.billingclient:billing:9.1.0")
+    // ./gradlew -Pplay connectedPlayDebugAndroidTest: its telemetry must stay off.
+    if (playBuild) {
+        "playImplementation"("com.android.billingclient:billing:9.1.0")
+    }
 
     // Tests only — nothing below ships in the APK.
     testImplementation("junit:junit:4.13.2")

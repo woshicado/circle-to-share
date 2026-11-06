@@ -16,7 +16,7 @@ if [ ! -f keystore.properties ] && [ -z "${KEYSTORE_FILE:-}" ]; then
     exit 1
 fi
 
-./gradlew bundlePlayRelease
+./gradlew -Pplay bundlePlayRelease
 
 version_name="$(grep -oE 'versionName = "[^"]+"' "$GRADLE" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')"
 version_code="$(grep -oE 'versionCode = [0-9]+' "$GRADLE" | head -1 | grep -oE '[0-9]+')"
