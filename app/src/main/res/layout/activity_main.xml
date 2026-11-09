@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root_scroll"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -26,118 +27,376 @@
             android:text="@string/setup_intro"
             android:textSize="15sp" />
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/setup_step1_title"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
+        <!-- The setup steps fold away under this row once they are done
+             (see MainActivity.renderSetup). The whole row is the button. -->
+        <LinearLayout
+            android:id="@+id/setup_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/setup_step1_body"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/status_assistant"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <!-- A setup button and its "?" (see SetupHelp.kt). The row wraps its
-             content and the button carries the weight: so the button never
-             stretches, but at large font sizes it shrinks (its label wraps)
-             rather than squeezing the "?" off the row. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="24dp"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center_vertical"
+            android:minHeight="48dp"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btn_assistant_settings"
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="@string/btn_assistant_settings" />
+                android:drawableStart="@drawable/ic_section_setup"
+                android:text="@string/setup_title" />
 
-            <Button
-                android:id="@+id/help_assistant"
-                style="@style/Widget.CircleToShare.HelpButton" />
+            <TextView
+                android:id="@+id/setup_summary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textSize="13sp" />
+
+            <ImageView
+                android:id="@+id/setup_chevron"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_expand_more"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/setup_step2_title"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
+        <LinearLayout
+            android:id="@+id/setup_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/setup_step2_body"
-            android:textSize="14sp" />
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/status_accessibility"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/setup_step1_title"
+                android:textSize="17sp"
+                android:textStyle="bold" />
 
-        <!-- Button and "?", as for step 1. -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/setup_step1_body"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/status_assistant"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <!-- A setup button and its "?" (see SetupHelp.kt). The row wraps its
+                 content and the button carries the weight: so the button never
+                 stretches, but at large font sizes it shrinks (its label wraps)
+                 rather than squeezing the "?" off the row. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_assistant_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/btn_assistant_settings" />
+
+                <Button
+                    android:id="@+id/help_assistant"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:text="@string/setup_step2_title"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/setup_step2_body"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/status_accessibility"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <!-- Button and "?", as for step 1. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_accessibility_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/btn_accessibility_settings" />
+
+                <Button
+                    android:id="@+id/help_fallback"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="32dp"
+                android:text="@string/setup_step3_title"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/setup_step3_body"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btn_test"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_test" />
+        </LinearLayout>
+
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="32dp"
+            android:background="?android:attr/listDivider" />
+
+        <!-- The ways to open the tool fold away under this row, and stay as
+             they were left (see MainActivity.showTriggers). -->
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:id="@+id/triggers_header"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="12dp"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
             android:gravity="center_vertical"
+            android:minHeight="48dp"
             android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btn_accessibility_settings"
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="@string/btn_accessibility_settings" />
+                android:drawableStart="@drawable/ic_section_triggers"
+                android:text="@string/triggers_title" />
 
-            <Button
-                android:id="@+id/help_fallback"
-                style="@style/Widget.CircleToShare.HelpButton" />
+            <!-- Folded, what of the section is a setting: whether the
+                 floating button is on (see MainActivity.renderTriggersSummary). -->
+            <TextView
+                android:id="@+id/triggers_summary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:gravity="end"
+                android:ellipsize="end"
+                android:maxLines="2"
+                android:textSize="13sp"
+                android:visibility="invisible" />
+
+            <ImageView
+                android:id="@+id/triggers_chevron"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_expand_more"
+                app:tint="?attr/colorOnSurfaceVariant" />
         </LinearLayout>
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="32dp"
-            android:text="@string/setup_step3_title"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
+        <LinearLayout
+            android:id="@+id/triggers_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/setup_step3_body"
-            android:textSize="14sp" />
+            android:orientation="vertical">
 
-        <Button
-            android:id="@+id/btn_test"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/btn_test" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/triggers_intro"
+                android:textSize="14sp" />
+
+            <!-- One row per trigger, each with the "?" that shows it in action
+                 (see SetupHelp.kt). -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/trigger_power"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/help_trigger_power"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/trigger_corner"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/help_trigger_corner"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/trigger_tile"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/help_trigger_tile"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/trigger_bubble"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/help_trigger_bubble"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <!-- Button and "?", as for step 1. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Hidden below API 33, which has no "add this tile" prompt.
+                     The "?" stays: it shows the way by hand. -->
+                <Button
+                    android:id="@+id/btn_add_tile"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="4dp"
+                    android:layout_weight="1"
+                    android:text="@string/btn_add_tile" />
+
+                <Button
+                    android:id="@+id/help_tile"
+                    style="@style/Widget.CircleToShare.HelpButton" />
+            </LinearLayout>
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_bubble"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/switch_bubble"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/bubble_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/switch_bubble_note"
+                android:textSize="13sp"
+                android:textColor="?android:attr/textColorSecondary" />
+
+            <LinearLayout
+                android:id="@+id/bubble_opacity_row"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/bubble_opacity_label"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
+                    android:text="@string/bubble_opacity"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/slider_bubble_opacity"
+                    android:contentDescription="@string/bubble_opacity"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+            </LinearLayout>
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
@@ -146,168 +405,35 @@
             android:background="?android:attr/listDivider" />
 
         <TextView
+            style="@style/Widget.CircleToShare.SectionHeading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="@string/triggers_title"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:drawableStart="@drawable/ic_section_crop"
+            android:text="@string/crop_tool_title" />
 
+        <!-- What the crop tool does on a tap that is none of its buttons:
+             nothing in the tool itself says so. -->
         <TextView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/triggers_intro"
-            android:textSize="14sp" />
-
-        <!-- One row per trigger, each with the "?" that shows it in action
-             (see SetupHelp.kt). -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/trigger_power"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/help_trigger_power"
-                style="@style/Widget.CircleToShare.HelpButton" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/trigger_corner"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/help_trigger_corner"
-                style="@style/Widget.CircleToShare.HelpButton" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/trigger_tile"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/help_trigger_tile"
-                style="@style/Widget.CircleToShare.HelpButton" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/trigger_bubble"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/help_trigger_bubble"
-                style="@style/Widget.CircleToShare.HelpButton" />
-        </LinearLayout>
-
-        <!-- Button and "?", as for step 1. -->
-        <LinearLayout
-            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="12dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <!-- Hidden below API 33, which has no "add this tile" prompt.
-                 The "?" stays: it shows the way by hand. -->
-            <Button
-                android:id="@+id/btn_add_tile"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="4dp"
-                android:layout_weight="1"
-                android:text="@string/btn_add_tile" />
-
-            <Button
-                android:id="@+id/help_tile"
-                style="@style/Widget.CircleToShare.HelpButton" />
-        </LinearLayout>
-
-        <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_bubble"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/switch_bubble"
-            android:textSize="16sp" />
+            android:text="@string/crop_gestures_title"
+            android:textSize="14sp" />
 
         <TextView
-            android:id="@+id/bubble_note"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="@string/switch_bubble_note"
-            android:textSize="13sp"
-            android:textColor="?android:attr/textColorSecondary" />
-
-        <LinearLayout
-            android:id="@+id/bubble_opacity_row"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:visibility="gone">
-
-            <TextView
-                android:id="@+id/bubble_opacity_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:importantForAccessibility="no"
-                android:text="@string/bubble_opacity"
-                android:textSize="14sp" />
-
-            <com.google.android.material.slider.Slider
-                android:id="@+id/slider_bubble_opacity"
-                android:contentDescription="@string/bubble_opacity"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1" />
-        </LinearLayout>
+            android:lineSpacingExtra="4dp"
+            android:text="@string/crop_gestures"
+            android:textSize="14sp" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/switch_freeform"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="8dp"
             android:text="@string/switch_freeform"
             android:textSize="16sp" />
 
@@ -354,7 +480,9 @@
             android:textSize="13sp"
             android:textColor="?android:attr/textColorSecondary" />
 
+        <!-- Hidden while QR detection is off (see MainActivity). -->
         <LinearLayout
+            android:id="@+id/qr_color_row"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
@@ -397,12 +525,110 @@
             android:background="?android:attr/listDivider" />
 
         <TextView
+            style="@style/Widget.CircleToShare.SectionHeading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
-            android:text="@string/about_title"
-            android:textSize="17sp"
-            android:textStyle="bold" />
+            android:drawableStart="@drawable/ic_section_experimental"
+            android:text="@string/experimental_title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/experimental_note"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <!-- Two things in one row, as system settings do it: the text side
+             is a button that opens the scrollshot page (its chevron and the
+             line before the switch say so), the switch turns the feature on
+             and off. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <LinearLayout
+                android:id="@+id/btn_scrollshot_settings"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="?attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/switch_scrollshot"
+                        android:textColor="?attr/colorOnSurface"
+                        android:textSize="16sp" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/scrollshot_row_summary"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:textSize="13sp" />
+                </LinearLayout>
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_marginStart="8dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_chevron_right"
+                    app:tint="?attr/colorOnSurfaceVariant" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="1dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="12dp"
+                android:layout_marginEnd="12dp"
+                android:background="?android:attr/listDivider" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/switch_capture_more"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:contentDescription="@string/switch_scrollshot" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/capture_more_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/switch_capture_more_note"
+            android:textSize="13sp"
+            android:textColor="?android:attr/textColorSecondary" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="32dp"
+            android:background="?android:attr/listDivider" />
+
+        <TextView
+            style="@style/Widget.CircleToShare.SectionHeading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:drawableStart="@drawable/ic_section_about"
+            android:text="@string/about_title" />
 
         <TextView
             android:layout_width="match_parent"

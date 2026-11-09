@@ -35,39 +35,79 @@ object QrDetector {
      * kept — the caller decides whether the result still applies (the overlay
      * may have been dismissed or reloaded while the scan ran).
      */
-    fun detect(bitmap: Bitmap, callback: (List<QrCode>) -> Unit) {
+    fun detect(bitmap: Bitmap, callback: (List<QrCode>) -> Unit): Scan {
+        val scan = Scan()
         Thread({
             val codes = try {
-                decode(bitmap)
+                decode(bitmap) { scan.cancelled }
             } catch (t: Throwable) {
                 // Decoding is best-effort garnish on the crop tool — a decoder
                 // crash (or OOM on the pixel copy) must never take the overlay
                 // down with it.
                 emptyList()
             }
-            main.post { callback(codes) }
+            if (!scan.cancelled) main.post { if (!scan.cancelled) callback(codes) }
         }, "qr-detect").start()
+        return scan
     }
 
-    private fun decode(bitmap: Bitmap): List<QrCode> {
+    /**
+     * A scan under way. [cancel] it once nobody wants its result — the crop
+     * tool closed, or showing another picture: a long picture takes a
+     * while to go through and is held in memory for as long, and "Capture
+     * more" replaces it at every step.
+     */
+    class Scan internal constructor() {
+        @Volatile
+        var cancelled = false
+            private set
+
+        fun cancel() {
+            cancelled = true
+        }
+    }
+
+    /**
+     * The codes in [bitmap], on the calling thread.
+     *
+     * A screenshot is decoded in one go. A long picture ("Capture more":
+     * many screens joined into one) is too much to copy out at once — every
+     * pixel becomes an int on the heap — so it is gone through in windows
+     * of a few thousand rows, each overlapping the last by the picture's
+     * width: a code is square and no wider than the picture, so whichever
+     * window boundary it lies across, it lies whole in one of the two.
+     */
+    internal fun decode(bitmap: Bitmap, cancelled: () -> Boolean = { false }): List<QrCode> {
         val width = bitmap.width
         val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        val source = RGBLuminanceSource(width, height, pixels)
-
+        val window = if (height <= MAX_ROWS_AT_ONCE) height else max(2 * width, MAX_ROWS_AT_ONCE - width)
         val found = ArrayList<QrCode>()
-        decodePass(source, width, height, found)
-        // Dark-mode QR codes are light-on-dark, which ZXing won't read
-        // directly; a second pass on inverted luminance catches them.
-        decodePass(source.invert(), width, height, found)
+        var top = 0
+        while (!cancelled()) {
+            val rows = min(window, height - top)
+            val pixels = IntArray(width * rows)
+            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
+            val source = RGBLuminanceSource(width, rows, pixels)
+            decodePass(source, width, rows, top, found)
+            if (cancelled()) break
+            // Dark-mode QR codes are light-on-dark, which ZXing won't read
+            // directly; a second pass on inverted luminance catches them.
+            decodePass(source.invert(), width, rows, top, found)
+            if (top + rows >= height) break
+            top += window - width
+        }
         return found
     }
 
+    // The tallest picture decoded in one piece: more than any one screen.
+    private const val MAX_ROWS_AT_ONCE = 4096
+
+    /** [top]: the row of the whole picture that row 0 of [source] is. */
     private fun decodePass(
         source: LuminanceSource,
         width: Int,
         height: Int,
+        top: Int,
         out: MutableList<QrCode>
     ) {
         val results: Array<Result> = try {
@@ -83,8 +123,9 @@ object QrDetector {
         }
         for (result in results) {
             val text = result.text ?: continue
-            val bounds = boundsOf(result, width, height) ?: continue
-            // The same code found by both passes (or twice in one) collapses:
+            val bounds = boundsOf(result, width, height)?.apply { offset(0, top) } ?: continue
+            // The same code found by both passes, in two windows of a long
+            // picture, or twice in one collapses:
             // its two boxes share a center. Two on-screen copies of one
             // payload both survive, even side by side — their padded boxes
             // may overlap, but neither's center lies inside the other.

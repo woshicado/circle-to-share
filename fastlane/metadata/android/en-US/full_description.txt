@@ -18,7 +18,8 @@ Highlights:
 * Nothing is saved to your device (unless you tap Save).
 * QR codes in the capture are highlighted, and can be opened, copied, or shared.
 * Optional snapping: crop edges align with the buttons, cards and images that were on screen.
+* Scrollshots (experimental): "More above"/"More below" in the crop tool to scroll the app underneath.
 
-Accessibility service: the Quick Settings tile, the floating bubble, snapping, and a capture fallback for devices that don't hand screenshots to third-party assistants use Android's AccessibilityService API. It is optional and off until you agree to the in-app disclosure and switch it on. It is used only to capture the screen and read element positions at the moment you trigger a capture.
+Accessibility service: the Quick Settings tile, the floating bubble, snapping, scrollshots, and a capture fallback for devices that don't hand screenshots to third-party assistants use Android's AccessibilityService API. It is optional and off until you agree to the in-app disclosure and switch it on. It captures the screen and reads element positions at the moment you trigger a capture, and scrolls the app underneath only when you tap "More above" or "More below". The list of your apps on the scrollshot settings page is read on your device when you open it and is not stored.
 
 Note: screens that block screenshots (banking apps, DRM video) cannot be captured.

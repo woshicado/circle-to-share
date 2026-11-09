@@ -21,4 +21,14 @@
         <item name="android:layout_width">48dp</item>
         <item name="android:layout_height">48dp</item>
     </style>
+
+    <!-- A section's heading on the settings screen, with its icon before it
+         (android:drawableStart, the one thing each sets for itself). -->
+    <style name="Widget.CircleToShare.SectionHeading" parent="Widget.MaterialComponents.TextView">
+        <item name="android:textSize">17sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:drawablePadding">10dp</item>
+        <item name="android:drawableTint">?attr/colorPrimary</item>
+    </style>
 </resources>

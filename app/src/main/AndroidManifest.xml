@@ -20,6 +20,19 @@
         android:name="${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         tools:node="remove" />
 
+    <!--
+      Not a permission: lets the scrollshot page list the apps that have a
+      launcher icon, to give one settings of its own. The list is read only
+      when the user opens it there (see ScrollshotSettingsActivity), and
+      nothing of it is kept but the apps they pick.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -42,6 +55,12 @@
         <activity
             android:name=".DisclosureActivity"
             android:exported="false" />
+
+        <!-- Scrollshot settings and per-app overrides, opened from MainActivity. -->
+        <activity
+            android:name=".ScrollshotSettingsActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <!-- Digital assistant entry point: launched when the user invokes the assistant. -->
         <service

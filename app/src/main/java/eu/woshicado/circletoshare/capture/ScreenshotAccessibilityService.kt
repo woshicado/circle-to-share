@@ -45,6 +45,7 @@ import eu.woshicado.circletoshare.MainActivity
 import eu.woshicado.circletoshare.Prefs
 import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
+import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.assist.AssistInteractionService
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.crop.SnapBounds
@@ -142,10 +143,19 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         private const val SNAP_MAX_NODES = 400
         private const val SNAP_MAX_DEPTH = 25
 
+        // From this many children up it is worth finding out whether they
+        // run down the page in order, to skip those above the screen.
+        private const val SNAP_SEARCH_MIN = 12
+
         // How long to wait after hiding the trigger before grabbing the screen.
         // The bubble is one removeView away; the Quick Settings shade has to
         // play its collapse animation first, or the shot is of the panel.
         private const val BUBBLE_HIDE_DELAY_MS = 80L
+
+        // The same for the assistant session's window, which fades out
+        // rather than vanish. A guess at 1x animation speed, not measured.
+        private const val SESSION_HIDE_BASE_MS = 400f
+        private const val SESSION_HIDE_OFF_MS = 150L
 
         // How long a notice stays up — a long toast's time — and a little
         // longer for one that can be tapped, to leave time to reach it.
@@ -244,6 +254,16 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private var overlayBitmap: Bitmap? = null
     private var bubbleDensityDpi = 0
     private var overlaySnap: SnapBounds? = null
+
+    // The "Capture more" run the open overlay's picture comes from, if it
+    // was asked for — kept while the overlay is up so the next step carries
+    // on from it, and through a step, when no overlay is up at all.
+    private var scrollRun: ScrollCapture? = null
+
+    // Set by the assistant session about to close for a "Capture more", to
+    // the way it is to go: the run is this service's to do (see
+    // adoptCaptureMore).
+    private var adoptingCaptureMore: ScrollCapture.Direction? = null
 
     // Last bubble position (persisted), so it reappears where the user left it.
     private var bubbleX = UNSET
@@ -495,6 +515,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // (Nothing of ours is on screen to keep in step with, either.)
         if (!consented()) return
+        // Only asked for while a "Capture more" step runs (see
+        // watchScrolling), and only added up.
+        if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+            scrollRun?.noteScrolled(event.scrollDeltaY)
+            return
+        }
         // The power menu opens beneath the crop overlay, where it can be
         // neither seen nor used. No broadcast announces it, but its dialog's
         // window appearing does arrive here.
@@ -514,8 +540,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
 
     // --- Screen capture: bubble path + assistant fallback/clean re-capture --
 
+    /** When the last screenshot was asked for (uptime): the system turns
+     *  down requests that follow one another too closely. */
+    var lastScreenshotUptime = 0L
+        private set
+
     fun capture(callback: (Bitmap?) -> Unit) {
         if (!consented()) return callback(null)
+        lastScreenshotUptime = SystemClock.uptimeMillis()
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             mainExecutor,
@@ -544,6 +576,43 @@ class ScreenshotAccessibilityService : AccessibilityService() {
 
     // --- Snap-to-content bounds ----------------------------------------------
 
+    /** The application windows on the default display, topmost first:
+     *  none of this app's overlays, the assistant's window or the system's. */
+    fun appWindows(): List<AccessibilityWindowInfo> =
+        runCatching { windows }.getOrNull().orEmpty().filter {
+            it.type == AccessibilityWindowInfo.TYPE_APPLICATION &&
+                it.displayId == Display.DEFAULT_DISPLAY
+        }
+
+    /**
+     * The app in front, by its package; null if there is none to be seen.
+     *
+     * In front: the application window that has the focus. With the crop
+     * tool or the assistant up none has it — then the one last touched, or
+     * failing that the largest. Never one that floats over the others as a
+     * picture in picture: topmost, and not what a capture is of.
+     */
+    fun frontAppPackage(): String? {
+        if (!consented()) return null
+        val onScreen = appWindows().filterNot { it.isInPictureInPictureMode }
+        val front = onScreen.firstOrNull { it.isFocused }
+            ?: onScreen.firstOrNull { it.isActive }
+            ?: onScreen.maxByOrNull { window ->
+                Rect().also { window.getBoundsInScreen(it) }.let { it.width().toLong() * it.height() }
+            }
+        return front?.root?.packageName?.toString()
+    }
+
+    /**
+     * Whether to snap in a capture taken now: the general setting, or the
+     * own one of the app in front, if it has one (see [Prefs.setAppOverride]).
+     */
+    fun snapEnabledNow(): Boolean {
+        // (No looking at the windows where it makes no difference.)
+        if (!Prefs.snapDependsOnApp(this)) return Prefs.isSnapEnabled(this)
+        return Prefs.isSnapEnabled(this, frontAppPackage())
+    }
+
     /**
      * Bounds of the UI elements currently on screen, for snap-to-content
      * cropping. Read via the window/node tree at the moment of capture only —
@@ -561,6 +630,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         val minSide = dp(4)
         val rects = HashSet<Rect>()
         var budget = SNAP_MAX_NODES
+        val started = SystemClock.uptimeMillis()
         var appWindows = 0
         for (window in windows) {
             // Application windows only: skips our own bubble/crop overlay
@@ -582,6 +652,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             "CircleToShare",
             "snap collect: ${windows.size} windows ($appWindows app), " +
                 "${rects.size} rects, ${SNAP_MAX_NODES - budget} nodes visited, " +
+                "${SystemClock.uptimeMillis() - started} ms, " +
                 "screen ${display.width()}x${display.height()}"
         )
         return if (rects.isEmpty()) null else {
@@ -604,9 +675,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     ): Int {
         if (budgetIn <= 0) return 0
         var budget = budgetIn - 1
+        val r = Rect()
+        node.getBoundsInScreen(r)
         if (node.isVisibleToUser) {
-            val r = Rect()
-            node.getBoundsInScreen(r)
             // Containers count too — cards and list rows are exactly the
             // boundaries users want. Only dust (dividers, zero-size nodes)
             // and off-screen bounds are dropped.
@@ -615,12 +686,62 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             }
         }
         if (depth >= SNAP_MAX_DEPTH) return budget
-        for (i in 0 until node.childCount) {
+        val count = node.childCount
+        // A long page scrolled far down — a web page lists all of itself —
+        // would spend the whole budget on what lies above the screen and
+        // never get to what is on it. Where there are many children and
+        // they run down the page in order, start at the first that reaches
+        // the screen and stop after the last that does.
+        val sorted = count >= SNAP_SEARCH_MIN && runsDownThePage(node, count)
+        var i = if (sorted) firstChildReachingScreen(node, count, display) else 0
+        var seenOnScreen = false
+        val bounds = Rect()
+        while (i < count) {
             if (budget <= 0) return 0
-            val child = node.getChild(i) ?: continue
+            val child = node.getChild(i++) ?: continue
+            if (sorted) {
+                child.getBoundsInScreen(bounds)
+                if (!bounds.isEmpty && bounds.top >= display.bottom) {
+                    if (seenOnScreen) break
+                } else if (Rect.intersects(bounds, display)) {
+                    seenOnScreen = true
+                }
+            }
             budget = walkSnapNodes(child, depth + 1, budget, display, minSide, out)
         }
         return budget
+    }
+
+    /** Whether [node]'s [count] children are laid out one below the other
+     *  in the order they are listed in — judged by three of them. */
+    private fun runsDownThePage(node: AccessibilityNodeInfo, count: Int): Boolean {
+        var last = Int.MIN_VALUE
+        val r = Rect()
+        for (i in intArrayOf(0, count / 2, count - 1)) {
+            val child = node.getChild(i) ?: return false
+            child.getBoundsInScreen(r)
+            if (r.isEmpty || r.top < last) return false
+            last = r.top
+        }
+        return true
+    }
+
+    /** The first of [node]'s children (which run down the page) to end
+     *  below the top of [display]: every one before it is above the screen. */
+    private fun firstChildReachingScreen(node: AccessibilityNodeInfo, count: Int, display: Rect): Int {
+        var lo = 0
+        var hi = count
+        val r = Rect()
+        while (lo < hi) {
+            val mid = (lo + hi) ushr 1
+            val child = node.getChild(mid)
+            child?.getBoundsInScreen(r)
+            // (One that can't be placed is taken to be on screen: better a
+            // few looks too many than a start too far down.)
+            if (child != null && !r.isEmpty && r.bottom <= display.top) lo = mid + 1 else hi = mid
+        }
+        // A step back: neighbours can overlap by a margin.
+        return (lo - 1).coerceAtLeast(0)
     }
 
     // --- Floating bubble ----------------------------------------------------
@@ -1184,7 +1305,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (gen != bubbleCaptureGen) return@post // assistant took over
                 if (!isScreenUsable()) return@post abandonCapture()
                 if (bitmap != null) {
-                    val snap = if (Prefs.isSnapEnabled(this)) collectSnapBounds() else null
+                    val snap = if (snapEnabledNow()) collectSnapBounds() else null
                     presentOverlay(bitmap, snap)
                 } else {
                     showNotice(getString(R.string.error_capture_failed))
@@ -1199,6 +1320,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private fun abandonCapture() {
         pendingCaptureGen = NO_CAPTURE
         capturing = false
+        // A "Capture more" step given up mid-way leaves its picture behind.
+        if (overlayView == null) teardownOverlay()
+        watchScrolling(false)
         refreshBubble()
     }
 
@@ -1232,6 +1356,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * while its crop overlay is up, and can't be tapped to stack a second tool.
      */
     fun setCapturing(active: Boolean) {
+        val adopting = adoptingCaptureMore
+        adoptingCaptureMore = null
+        if (!active && adopting != null) {
+            // The session closed to let the app underneath be scrolled: the
+            // tool is still open as far as anyone can tell, and the latch
+            // passes to the run.
+            beginAdoptedCaptureMore(adopting)
+            return
+        }
         capturing = active
         if (active) {
             // Also close the bubble-path overlay — and cancel any bubble
@@ -1261,9 +1394,12 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      *  rather than whatever the app underneath has changed to since. */
     fun openOverlaySnapBounds(): SnapBounds? = if (overlayView != null) overlaySnap else null
 
-    private fun presentOverlay(bitmap: Bitmap, snap: SnapBounds?) {
+    /** [run]: the "Capture more" run [bitmap] comes from, to carry on with
+     *  if more is asked for. */
+    private fun presentOverlay(bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null) {
         ShareHelper.cleanupCache(this)
         teardownOverlay()
+        scrollRun = run
         pendingCaptureGen = NO_CAPTURE // it is being presented now
         overlayGen = bubbleCaptureGen
         overlayBitmap = bitmap
@@ -1295,6 +1431,15 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         }
         // Cancel on the back key.
         screen.onBackKey = { dismissOverlay() }
+        if (Prefs.isCaptureMoreEnabled(this)) {
+            // A run that has grown one way can only go on that way.
+            screen.captureMoreChoices = when (run?.direction) {
+                ScrollCapture.Direction.UP -> setOf(CropScreen.More.ABOVE)
+                ScrollCapture.Direction.DOWN -> setOf(CropScreen.More.BELOW)
+                null -> setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
+            }
+            screen.onCaptureMore = { captureMore(directionOf(it)) }
+        }
 
         val frame = overlayFrame()
         overlayDisplay = displayState()
@@ -1327,6 +1472,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         if (runCatching { windowManager.addView(screen, params) }.isFailure) {
             overlayBitmap = null
             overlaySnap = null
+            scrollRun = null
             // Restore the "no overlay is open" invariant overlayGen documents —
             // it was claimed just above, and leaving it pointing at the live
             // generation would let a future overlayGen-only check clear a latch
@@ -1349,6 +1495,113 @@ class ScreenshotAccessibilityService : AccessibilityService() {
             ) { dismissOverlay() }
         }
         screen.setBitmap(bitmap, snap)
+    }
+
+    // --- Capture more (experimental) ------------------------------------------
+
+    /**
+     * One of the "Capture more" buttons was tapped in the open overlay:
+     * take the overlay off the screen, scroll the app underneath one step,
+     * and put the overlay back with the longer picture (see [ScrollCapture]).
+     *
+     * For as long as the step takes, this is a capture in flight like the
+     * bubble's before its overlay is up — same latch, same generation, and
+     * called off by the same things (see [cancelPendingCapture]).
+     */
+    private fun captureMore(going: ScrollCapture.Direction) {
+        if (overlayView == null || overlayGen != bubbleCaptureGen) return
+        val run = scrollRun ?: ScrollCapture(this, ui)
+        detachOverlayView()
+        dropNotice() // like the overlay, it would be in the picture
+        scrollRun = run
+        pendingCaptureGen = bubbleCaptureGen
+        runCaptureMoreStep(run, going, bubbleCaptureGen, BUBBLE_HIDE_DELAY_MS)
+    }
+
+    private var watchingScrolling = false
+
+    /**
+     * Hear of the app's scrolling for as long as a step runs: how far the
+     * app says its list moved is what the joining looks at first (see
+     * ScrollStitcher.match). Nothing but a count and a distance is kept.
+     */
+    private fun watchScrolling(on: Boolean) {
+        if (on == watchingScrolling) return
+        watchingScrolling = on
+        runCatching {
+            serviceInfo = serviceInfo?.apply {
+                eventTypes = if (on) {
+                    eventTypes or AccessibilityEvent.TYPE_VIEW_SCROLLED
+                } else {
+                    eventTypes and AccessibilityEvent.TYPE_VIEW_SCROLLED.inv()
+                }
+            }
+        }
+    }
+
+    private fun directionOf(more: CropScreen.More) = when (more) {
+        CropScreen.More.ABOVE -> ScrollCapture.Direction.UP
+        CropScreen.More.BELOW -> ScrollCapture.Direction.DOWN
+    }
+
+    /**
+     * The assistant session's "Capture more". Its window cannot stay up for
+     * it (the drag would land on that window, not the app), and nothing but
+     * this service can make the drag — so the session hands over: it calls
+     * this, then closes, and the run carries on in this service's overlay,
+     * which looks the same. False if this service can't take it.
+     */
+    fun adoptCaptureMore(more: CropScreen.More): Boolean {
+        if (!consented() || !capturing) return false
+        adoptingCaptureMore = directionOf(more)
+        return true
+    }
+
+    private fun beginAdoptedCaptureMore(going: ScrollCapture.Direction) {
+        val gen = ++bubbleCaptureGen
+        pendingCaptureGen = gen
+        val run = ScrollCapture(this, ui)
+        scrollRun = run
+        runCaptureMoreStep(
+            run, going, gen, animationSettleMs(this, SESSION_HIDE_BASE_MS, SESSION_HIDE_OFF_MS)
+        )
+    }
+
+    private fun runCaptureMoreStep(
+        run: ScrollCapture, going: ScrollCapture.Direction, gen: Int, delayMs: Long
+    ) {
+        val alive = { gen == bubbleCaptureGen && scrollRun === run }
+        ui.postDelayed({
+            if (!alive()) return@postDelayed
+            if (!isScreenUsable()) return@postDelayed abandonCapture()
+            watchScrolling(true)
+            run.step(going, alive) { outcome ->
+                watchScrolling(false)
+                if (!alive()) return@step
+                if (!isScreenUsable()) return@step abandonCapture()
+                // Not even a first frame: back to the picture the tool was
+                // showing (kept through the step), if it was this service's.
+                val grown = run.bitmap
+                val bitmap = grown ?: overlayBitmap
+                if (bitmap == null) {
+                    showNotice(getString(R.string.error_capture_failed))
+                    return@step abandonCapture()
+                }
+                if (grown != null) {
+                    presentOverlay(grown, run.snapBounds(), run)
+                } else {
+                    presentOverlay(bitmap, overlaySnap, null)
+                }
+                when (outcome) {
+                    ScrollCapture.Outcome.EXTENDED -> Unit
+                    ScrollCapture.Outcome.UNSURE -> showNotice(getString(R.string.capture_more_unsure))
+                    ScrollCapture.Outcome.END -> showNotice(getString(R.string.capture_more_end))
+                    ScrollCapture.Outcome.BLOCKED -> showNotice(getString(R.string.capture_more_blocked))
+                    ScrollCapture.Outcome.TOO_LONG -> showNotice(getString(R.string.capture_more_too_long))
+                    ScrollCapture.Outcome.FAILED -> showNotice(getString(R.string.error_capture_failed))
+                }
+            }
+        }, delayMs)
     }
 
     /** Re-fit an open crop overlay to the current display bounds (rotation). */
@@ -1445,11 +1698,20 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     private fun teardownOverlay() {
+        detachOverlayView()
+        overlayBitmap = null
+        overlaySnap = null
+        scrollRun = null
+        // (A step called off mid-way never gets to switch this off itself.)
+        watchScrolling(false)
+    }
+
+    /** Take the overlay off the screen and no more: what it was showing is
+     *  kept, for a "Capture more" step to put back, grown. */
+    private fun detachOverlayView() {
         overlayView?.let { runCatching { windowManager.removeView(it) } }
         overlayView = null
         overlayDisplay = null
-        overlayBitmap = null
-        overlaySnap = null
     }
 
     private fun dp(value: Int): Int =

@@ -10,11 +10,13 @@ import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.nio.ByteBuffer
@@ -24,6 +26,22 @@ import java.nio.ByteBuffer
 class SetupHelpTest {
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+    // Whether "How to open it" is folded is stored, and these tests tap its
+    // header: as found, afterwards.
+    private var triggersWere = true
+
+    @Before
+    fun remember() {
+        triggersWere = Prefs.isTriggersExpanded(instrumentation.targetContext)
+    }
+
+    @After
+    fun restore() {
+        Prefs.setTriggersExpanded(instrumentation.targetContext, triggersWere)
+        instrumentation.targetContext.getSharedPreferences("cts", android.content.Context.MODE_PRIVATE)
+            .edit().commit()
+    }
 
     private class Helper(val button: Int, val title: Int, val clip: Int)
 
@@ -36,6 +54,24 @@ class SetupHelpTest {
         Helper(R.id.help_trigger_tile, R.string.help_title_trigger_tile, R.raw.help_trigger_tile),
         Helper(R.id.help_trigger_bubble, R.string.help_title_trigger_bubble, R.raw.help_trigger_bubble),
     )
+
+    /** The main screen with its sections open: folded away (the setup steps
+     *  where setup is done, "How to open it" where the user left it so),
+     *  the "?" of each row is folded away with them. */
+    private fun launchWithStepsShown(): ActivityScenario<MainActivity> =
+        ActivityScenario.launch(MainActivity::class.java).also { scenario ->
+            scenario.onActivity {
+                if (it.findViewById<View>(R.id.setup_content).visibility != View.VISIBLE) {
+                    it.findViewById<View>(R.id.setup_header).performClick()
+                }
+                if (it.findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE) {
+                    it.findViewById<View>(R.id.triggers_header).performClick()
+                    // (Stored by that tap: back to how it was.)
+                    Prefs.setTriggersExpanded(it, false)
+                }
+            }
+            instrumentation.waitForIdleSync()
+        }
 
     private fun ActivityScenario<MainActivity>.shownCard(): PopupWindow? {
         var card: PopupWindow? = null
@@ -62,7 +98,7 @@ class SetupHelpTest {
 
     @Test
     fun eachHelper_opensItsCard_playingItsRecording() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        launchWithStepsShown().use { scenario ->
             for (helper in helpers) {
                 scenario.click(helper.button)
                 val card = scenario.shownCard()
@@ -87,7 +123,7 @@ class SetupHelpTest {
 
     @Test
     fun back_closesTheCard_andStopsTheRecording() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        launchWithStepsShown().use { scenario ->
             scenario.click(R.id.help_assistant)
             val card = scenario.shownCard()!!
             var clip: AnimatedImageDrawable? = null
@@ -107,7 +143,7 @@ class SetupHelpTest {
 
     @Test
     fun openingAnotherHelper_closesTheFirst() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        launchWithStepsShown().use { scenario ->
             scenario.click(R.id.help_assistant)
             val first = scenario.shownCard()!!
             scenario.click(R.id.help_tile)
@@ -127,6 +163,59 @@ class SetupHelpTest {
             val bytes = resources.openRawResource(helper.clip).use { it.readBytes() }
             val drawable = ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(bytes)))
             assertTrue(drawable is AnimatedImageDrawable)
+        }
+    }
+
+    @Test
+    fun aCard_followsItsButton_andClosesWhenThatIsGone() {
+        launchWithStepsShown().use { scenario ->
+            // The button on screen, with room around it to move in.
+            scenario.onActivity { activity ->
+                val button = activity.findViewById<View>(R.id.help_trigger_power)
+                val at = IntArray(2).also { button.getLocationOnScreen(it) }
+                activity.findViewById<android.widget.ScrollView>(R.id.root_scroll)
+                    .scrollBy(0, at[1] - activity.window.decorView.height / 3)
+            }
+            instrumentation.waitForIdleSync()
+            scenario.click(R.id.help_trigger_power)
+            val card = scenario.shownCard()
+            assertNotNull(card)
+
+            fun top(view: View) = IntArray(2).also { view.getLocationOnScreen(it) }[1]
+            var buttonWas = 0
+            var cardWas = 0
+            // The sections looked at again, as on every return to the
+            // screen, and found as they are: no matter to the card.
+            scenario.onActivity {
+                it.renderSetup(isAssistant = false, fallbackEnabled = false)
+                it.renderSetup(isAssistant = false, fallbackEnabled = false)
+                buttonWas = top(it.findViewById(R.id.help_trigger_power))
+                cardWas = top(card!!.contentView)
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { assertTrue(card!!.isShowing) }
+
+            // A line above goes, and the row moves up: the card with it, by
+            // as much.
+            scenario.onActivity { it.findViewById<View>(R.id.status_assistant).visibility = View.GONE }
+            var moved = 0
+            repeat(20) {
+                instrumentation.waitForIdleSync()
+                scenario.onActivity { moved = top(card!!.contentView) - cardWas }
+                if (moved != 0) return@repeat
+                Thread.sleep(50)
+            }
+            scenario.onActivity {
+                assertTrue(card!!.isShowing)
+                val buttonMoved = top(it.findViewById(R.id.help_trigger_power)) - buttonWas
+                assertTrue("the button moved", buttonMoved < 0)
+                assertEquals(buttonMoved, moved)
+            }
+
+            // Its own section folding takes the button away altogether.
+            scenario.onActivity { it.findViewById<View>(R.id.triggers_header).performClick() }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { assertFalse(card!!.isShowing) }
         }
     }
 }

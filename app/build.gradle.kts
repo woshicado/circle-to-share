@@ -32,8 +32,8 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 30
         targetSdk = 36
-        versionCode = 13
-        versionName = "0.3.4"
+        versionCode = 14
+        versionName = "0.3.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -107,6 +107,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    // The list on the scrollshot page. Material brings it in anyway, at
+    // this version: named because the app's own code uses it.
+    implementation("androidx.recyclerview:recyclerview:1.1.0")
     // Pure-Java QR decoding. No native libs, no Play Services, and offline
     implementation("com.google.zxing:core:3.5.3")
     // Play build only (see src/play). After changing the version, run

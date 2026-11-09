@@ -30,6 +30,8 @@ only **Save** puts it in your gallery (`Pictures/Screenshots`).
 
 The loop's outline becomes a crop box you can resize and reposition. Prefer dragging a rectangle directly? Turn off **Circle to crop** in the app.
 
+**Scrollshots** (experimental): switch on **Scrollshot support** in the app and the crop tool gains **More above** and **More below**. The step size and a (best-effort) removal of scrollbar handles can be set. Needs the accessibility service, which performs the scroll as an injected swipe.
+
 ## Triggering it
 
 Use any of these:
@@ -47,6 +49,7 @@ Use any of these:
 - The **Quick Settings tile** (`TileService`) is a third entry point that needs neither the assistant role nor a permanently visible button. It drives the same accessibility capture as the bubble: on tap it dismisses the shade (`GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE`), waits out the collapse animation, then shoots.
 - Shared images go out through a `FileProvider` URI backed by `cacheDir`; requiring no storage permission, no gallery entry, no cleanup chores.
 - **Save** adds the crop to `Pictures/Screenshots` through `MediaStore`, which needs no storage permission either.
+- **Scrollshots** (experimental): "More above" / "More below" ask the accessibility service to scroll the app underneath by an injected drag (`dispatchGesture`), take another screenshot and join it onto the picture by comparing rows of the two frames. A list of installed apps for per-app settings is read on the device when opening the per-app settings page.
 - **Snap to screen content** (optional, off by default): when enabled, crop edges snap to the buttons, cards, and images that were on screen, read from the accessibility node tree. Element *positions* are read once, at the moment of capture, solely to align the crop box — nothing is stored or transmitted. This is why the accessibility service declares the "retrieve window content" capability; leave the toggle off and the bounds are never read at all.
 
 ## Build & install

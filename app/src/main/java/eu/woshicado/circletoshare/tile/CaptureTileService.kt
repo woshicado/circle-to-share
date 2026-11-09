@@ -85,7 +85,7 @@ class CaptureTileService : TileService() {
         // so the same call made after unlockAndRun is silently dropped, and the
         // user would have authenticated for nothing.
         if (ScreenshotAccessibilityService.instance == null) {
-            Toast.makeText(this, R.string.error_tile_needs_accessibility, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.error_needs_accessibility, Toast.LENGTH_LONG).show()
             openApp()
             return
         }
@@ -116,7 +116,7 @@ class CaptureTileService : TileService() {
         // there — openApp() can no longer collapse the shade (see onClick).
         val service = ScreenshotAccessibilityService.instance
         if (service == null) {
-            Toast.makeText(this, R.string.error_tile_needs_accessibility, Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.error_needs_accessibility, Toast.LENGTH_LONG).show()
             return
         }
         when (service.triggerCaptureFromShade()) {

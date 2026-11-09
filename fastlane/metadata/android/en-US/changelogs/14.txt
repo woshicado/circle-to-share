@@ -1,0 +1,5 @@
+NOTE: Existing users might have to re-enable accessibility access, due to the `canPerformGesture` functionality needed for scrollshots. In case this is not possible, force stop the app and re-open once.
+
+* Experimental support for scrollshots, with per-app settings
+* Settings: visual cleanup
+* Explain gestures in-app

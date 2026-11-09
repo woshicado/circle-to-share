@@ -344,6 +344,121 @@ class CropScreenTest {
         assertEquals(View.VISIBLE, findCropView(screen)!!.visibility)
     }
 
+    private fun moreButton(label: Int): TextView = findText(screen, context.getString(label))!!
+
+    /** Whether [button] is on screen: itself and the row it is in. */
+    private fun shows(button: View): Boolean =
+        button.visibility == View.VISIBLE && (button.parent as View).visibility == View.VISIBLE
+
+    @Test
+    fun captureMoreIsOnlyThereForAHostThatCanDoIt() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        assertFalse(shows(above))
+        assertFalse(shows(below))
+
+        val asked = ArrayList<CropScreen.More>()
+        onMain {
+            screen.onCaptureMore = { asked += it }
+            layOut()
+        }
+        assertTrue(shows(above))
+        assertTrue(shows(below))
+        // A row of their own above the bar, clear of the bar's buttons.
+        val bar = barButtons().first().parent as View
+        val row = above.parent as View
+        assertTrue("the buttons overlap the bar", row.bottom <= bar.top)
+        onMain {
+            above.performClick()
+            below.performClick()
+        }
+        assertEquals(listOf(CropScreen.More.ABOVE, CropScreen.More.BELOW), asked)
+
+        onMain {
+            screen.onCaptureMore = null
+            layOut()
+        }
+        assertFalse(shows(above))
+        assertFalse(shows(below))
+    }
+
+    @Test
+    fun onlyTheWaysThereAreToGoAreOffered() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        onMain {
+            screen.onCaptureMore = {}
+            layOut()
+        }
+        val bothLeft = below.left
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.BELOW)
+            layOut()
+        }
+        assertFalse(shows(above))
+        assertTrue(shows(below))
+        // The one left stays where it was: it is tapped again and again.
+        assertEquals(bothLeft, below.left)
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.ABOVE)
+            layOut()
+        }
+        assertTrue(shows(above))
+        assertFalse(shows(below))
+        onMain {
+            screen.captureMoreChoices = emptySet()
+            layOut()
+        }
+        assertFalse(shows(above))
+        assertFalse(shows(below))
+    }
+
+    @Test
+    fun captureMoreStepsAsideWhileSomethingIsSelected() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        val crop = findCropView(screen)!!
+        onMain {
+            screen.onCaptureMore = {}
+            layOut()
+        }
+        assertTrue(shows(above))
+        assertTrue(shows(below))
+
+        onMain { crop.applyCropRect(Rect(200, 600, 800, 1400)) }
+        assertFalse(shows(above))
+        assertFalse(shows(below))
+
+        // A new capture starts with nothing selected.
+        onMain {
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            layOut()
+        }
+        assertTrue(shows(above))
+        assertTrue(shows(below))
+    }
+
+    @Test
+    fun captureMoreComesAndGoesWithTheTool() {
+        val below = moreButton(R.string.action_capture_more_below)
+        onMain {
+            screen.onCaptureMore = {}
+            screen.showMessage("nothing to crop")
+            layOut()
+        }
+        assertFalse(shows(below))
+        onMain {
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            layOut()
+        }
+        assertTrue(shows(below))
+        onMain {
+            screen.clear()
+            layOut()
+        }
+        assertFalse(shows(below))
+    }
+
     /** Cancel, Copy and the share button of the main bar. */
     private fun barButtons(): List<TextView> {
         val share = findText(screen, context.getString(R.string.action_share_full))!!

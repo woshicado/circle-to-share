@@ -23,12 +23,14 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.CompoundButton
 import android.widget.EditText
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
+import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -86,9 +88,19 @@ class MainActivity : AppCompatActivity() {
     // setting that says so changes a moment later.
     private var disclosureOffered = false
 
+    // Whether the user opened or closed the setup steps by hand (null: no,
+    // they are as renderSetup would have them), and whether setup was done
+    // the last time it looked: the user's choice holds until that changes.
+    private var setupOpenedByHand: Boolean? = null
+    private var setupWasDone: Boolean? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         disclosureOffered = savedInstanceState?.getBoolean(STATE_DISCLOSURE_OFFERED) ?: false
+        if (savedInstanceState?.containsKey(STATE_SETUP_OPENED) == true) {
+            setupOpenedByHand = savedInstanceState.getBoolean(STATE_SETUP_OPENED)
+            setupWasDone = savedInstanceState.getBoolean(STATE_SETUP_WAS_DONE)
+        }
         // Android 15+ lays the activity out edge to edge whether we ask or
         // not (targetSdk 36); ask for the same below that, so every version
         // takes the one code path and looks alike. The theme makes the bars
@@ -133,6 +145,27 @@ class MainActivity : AppCompatActivity() {
             }
             insets
         }
+
+        val setupHeader = findViewById<View>(R.id.setup_header)
+        setupHeader.setOnClickListener {
+            val open = findViewById<View>(R.id.setup_content).visibility != View.VISIBLE
+            setupOpenedByHand = open
+            showSetupSteps(open)
+        }
+        setupHeader.readAsButton()
+
+        // "How to open it" folds too, but only by hand, and stays as left.
+        findViewById<View>(R.id.triggers_header).apply {
+            readAsButton()
+            setOnClickListener {
+                // (From what is shown, like the setup header: a tap always
+                // does something, whatever is stored.)
+                val open = this@MainActivity.findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
+                Prefs.setTriggersExpanded(this@MainActivity, open)
+                showTriggers(open)
+            }
+        }
+        showTriggers(Prefs.isTriggersExpanded(this))
 
         findViewById<Button>(R.id.btn_assistant_settings).setOnClickListener {
             openFirstAvailable(
@@ -193,7 +226,7 @@ class MainActivity : AppCompatActivity() {
                 // them back here.
                 if (!fallbackUsable()) {
                     Toast.makeText(
-                        this, R.string.error_tile_needs_accessibility, Toast.LENGTH_LONG
+                        this, R.string.error_needs_accessibility, Toast.LENGTH_LONG
                     ).show()
                 } else {
                     requestAddTile()
@@ -207,11 +240,7 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialSwitch>(R.id.switch_bubble).setOnCheckedChangeListener { view, checked ->
             if (syncingSwitches) return@setOnCheckedChangeListener
-            if (checked && !fallbackUsable()) {
-                view.isChecked = false
-                Toast.makeText(this, R.string.error_bubble_needs_accessibility, Toast.LENGTH_LONG).show()
-                return@setOnCheckedChangeListener
-            }
+            if (checked && refusedWithoutFallback(view)) return@setOnCheckedChangeListener
             ScreenshotAccessibilityService.setBubblePref(this, checked)
             setOpacityRowVisible(checked)
         }
@@ -252,15 +281,28 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<MaterialSwitch>(R.id.switch_snap).setOnCheckedChangeListener { view, checked ->
             if (syncingSwitches) return@setOnCheckedChangeListener
-            if (checked && !fallbackUsable()) {
-                view.isChecked = false
-                Toast.makeText(this, R.string.error_snap_needs_accessibility, Toast.LENGTH_LONG).show()
-                return@setOnCheckedChangeListener
-            }
+            if (checked && refusedWithoutFallback(view)) return@setOnCheckedChangeListener
             Prefs.setSnapEnabled(this, checked)
         }
 
+        findViewById<MaterialSwitch>(R.id.switch_capture_more).setOnCheckedChangeListener { view, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            scrollshotButtonsSwitched(view, checked)
+        }
+        // The text beside that switch is a button of its own: the page with
+        // the scrollshot settings, which are worth looking at (and setting)
+        // whether the buttons are switched on just now or not.
+        findViewById<View>(R.id.btn_scrollshot_settings).apply {
+            readAsButton()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, ScrollshotSettingsActivity::class.java))
+            }
+        }
+
         findViewById<MaterialSwitch>(R.id.switch_qr).setOnCheckedChangeListener { _, checked ->
+            // (Before the guard: the color follows the switch however it
+            // came to be where it is.)
+            setQrColorRowVisible(checked)
             if (syncingSwitches) return@setOnCheckedChangeListener
             Prefs.setQrDetectEnabled(this, checked)
         }
@@ -276,6 +318,10 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_DISCLOSURE_OFFERED, disclosureOffered)
+        setupOpenedByHand?.let {
+            outState.putBoolean(STATE_SETUP_OPENED, it)
+            outState.putBoolean(STATE_SETUP_WAS_DONE, setupWasDone == true)
+        }
     }
 
     // Guards the color field's TextWatcher against programmatic setText
@@ -445,6 +491,7 @@ class MainActivity : AppCompatActivity() {
             R.id.status_accessibility, fallbackEnabled,
             R.string.status_fallback_on, R.string.status_fallback_off
         )
+        renderSetup(isAssistant, fallbackEnabled)
 
         if (!fallbackEnabled) {
             disclosureOffered = false
@@ -463,6 +510,7 @@ class MainActivity : AppCompatActivity() {
                 ScreenshotAccessibilityService.getBubbleOpacity(this).toFloat()
         }
         setOpacityRowVisible(bubbleEnabled)
+        renderTriggersSummary()
 
         findViewById<MaterialSwitch>(R.id.switch_freeform).isChecked =
             Prefs.isFreeformCrop(this)
@@ -470,9 +518,109 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_snap).isChecked =
             Prefs.isSnapEnabled(this)
 
-        findViewById<MaterialSwitch>(R.id.switch_qr).isChecked =
-            Prefs.isQrDetectEnabled(this)
+        findViewById<MaterialSwitch>(R.id.switch_capture_more).isChecked =
+            Prefs.isCaptureMoreEnabled(this)
+
+        val qr = Prefs.isQrDetectEnabled(this)
+        findViewById<MaterialSwitch>(R.id.switch_qr).isChecked = qr
+        setQrColorRowVisible(qr)
         syncingSwitches = false
+    }
+
+    /**
+     * The setup section's header and whether its steps show under it.
+     *
+     * Done — assistant set and fallback on — the steps are so much scrolling
+     * past on the way to the settings, and fold away; with anything still to
+     * do they are what this screen is for, and show. A tap on the header
+     * overrides either, until what is done changes: steps folded away by
+     * hand come back by themselves when one of them stops being done.
+     */
+    internal fun renderSetup(isAssistant: Boolean, fallbackEnabled: Boolean) {
+        val done = isAssistant && fallbackEnabled
+        if (setupWasDone != done) setupOpenedByHand = null
+        setupWasDone = done
+        findViewById<TextView>(R.id.setup_summary).text = getString(
+            R.string.setup_summary,
+            getString(
+                if (isAssistant) R.string.setup_summary_assistant_on
+                else R.string.setup_summary_assistant_off
+            ),
+            getString(
+                if (fallbackEnabled) R.string.setup_summary_fallback_on
+                else R.string.setup_summary_fallback_off
+            )
+        )
+        showSetupSteps(setupOpenedByHand ?: !done)
+    }
+
+    /**
+     * The switch for the scrollshot buttons was set to [checked]. Switched
+     * on — not found on: a rotation sets the switch too — they need the
+     * accessibility service, and are experimental: the first is refused
+     * like the bubble and snapping without it, the second said.
+     */
+    private fun scrollshotButtonsSwitched(switch: CompoundButton, checked: Boolean) {
+        val switchedOn = checked && !Prefs.isCaptureMoreEnabled(this)
+        if (switchedOn && refusedWithoutFallback(switch)) return
+        // Not on without its notice either (a screen on its way out cannot
+        // show one).
+        if (switchedOn &&
+            !ExperimentalNoticeDialog.show(supportFragmentManager, ExperimentalNoticeDialog.Feature.SCROLLSHOT)
+        ) {
+            switch.isChecked = false
+            return
+        }
+        Prefs.setCaptureMoreEnabled(this, checked)
+    }
+
+    /** A switch for something that needs the accessibility service was set
+     *  on. Without the service it goes off again, with a word on why: true
+     *  then, and there is nothing more to do. */
+    private fun refusedWithoutFallback(switch: CompoundButton): Boolean {
+        if (fallbackUsable()) return false
+        switch.isChecked = false
+        Toast.makeText(this, R.string.error_needs_accessibility, Toast.LENGTH_LONG).show()
+        return true
+    }
+
+    private fun showSetupSteps(show: Boolean) =
+        showSection(R.id.setup_header, R.id.setup_chevron, R.id.setup_content, show)
+
+    private fun showTriggers(show: Boolean) {
+        showSection(R.id.triggers_header, R.id.triggers_chevron, R.id.triggers_content, show)
+        renderTriggersSummary()
+    }
+
+    /** Folded, the header of "How to open it" says what of the section is
+     *  a setting and now out of sight: whether the floating button is on.
+     *  As its switch has it — where the two differed (switched on, but the
+     *  service it needs is off, which Setup's header says) the header would
+     *  send the user to a switch that is on already. */
+    internal fun renderTriggersSummary(
+        bubbleOn: Boolean = ScreenshotAccessibilityService.isBubbleEnabled(this)
+    ) {
+        val folded = findViewById<View>(R.id.triggers_content).visibility != View.VISIBLE
+        findViewById<TextView>(R.id.triggers_summary).apply {
+            setText(
+                if (bubbleOn) R.string.triggers_summary_bubble_on
+                else R.string.triggers_summary_bubble_off
+            )
+            // (Its room is kept: the chevron stays at the row's end.)
+            visibility = if (folded) View.VISIBLE else View.INVISIBLE
+        }
+    }
+
+    /** A section that folds away under its header, open or folded. */
+    private fun showSection(header: Int, chevron: Int, content: Int, show: Boolean) {
+        findViewById<View>(content).visibility = if (show) View.VISIBLE else View.GONE
+        showExpanded(findViewById(header), findViewById(chevron), show)
+    }
+
+    /** The highlight color only means something while codes are looked for. */
+    private fun setQrColorRowVisible(visible: Boolean) {
+        findViewById<View>(R.id.qr_color_row).visibility =
+            if (visible) View.VISIBLE else View.GONE
     }
 
     /** The opacity slider only means something while the bubble is on. */
@@ -539,9 +687,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** The accessibility service is running and may be used: the tile, the
-     *  bubble and snapping all need both. */
-    private fun fallbackUsable(): Boolean =
+     *  bubble, snapping and the scrollshot buttons all need both. */
+    private fun fallbackUsable(): Boolean = fallbackCheck()
+
+    /** How [fallbackUsable] finds out. A test, which cannot have the
+     *  service running, puts its own answer here. */
+    @VisibleForTesting
+    internal var fallbackCheck: () -> Boolean = {
         ScreenshotAccessibilityService.instance != null && Prefs.hasAccessibilityConsent(this)
+    }
 
     private fun openAccessibilitySettings() =
         openFirstAvailable(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -572,6 +726,8 @@ class MainActivity : AppCompatActivity() {
         const val VOICE_INTERACTION_SERVICE = "voice_interaction_service"
 
         const val STATE_DISCLOSURE_OFFERED = "disclosure_offered"
+        const val STATE_SETUP_OPENED = "setup_opened_by_hand"
+        const val STATE_SETUP_WAS_DONE = "setup_was_done"
 
         val WATCHED_SETTINGS = listOf(
             VOICE_INTERACTION_SERVICE,

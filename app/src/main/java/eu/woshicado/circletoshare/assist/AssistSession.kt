@@ -236,11 +236,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // Grab the snap bounds NOW — before the accessibility framework
         // notices our window covering the app and marks its nodes invisible
         // (or drops the window from getWindows() entirely).
-        pendingSnap = if (Prefs.isSnapEnabled(context)) {
-            ScreenshotAccessibilityService.instance?.collectSnapBounds()
-        } else {
-            null
-        }
+        pendingSnap = ScreenshotAccessibilityService.instance
+            ?.takeIf { it.snapEnabledNow() }
+            ?.collectSnapBounds()
         if (!watchingScreen) {
             watchingScreen = true
             context.registerReceiver(
@@ -272,6 +270,13 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         ShareHelper.cleanupCache(context)
 
         val service = ScreenshotAccessibilityService.instance
+        // "Capture more" is the accessibility service's to do (see
+        // captureMore): offered only where it runs and may be used.
+        cropScreen.captureMoreChoices = setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
+        cropScreen.onCaptureMore =
+            if (service != null && Prefs.hasAccessibilityConsent(context) &&
+                Prefs.isCaptureMoreEnabled(context)
+            ) ({ captureMore(it) }) else null
         if (afterUnlock && service == null) {
             // Nothing here can take a picture of what the unlock revealed.
             // Asking again, now that the device is unlocked, will get one
@@ -490,6 +495,19 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
                 "snap rects: ${pendingSnap?.rects?.size ?: 0}"
         )
         cropScreen.setBitmap(software, pendingSnap)
+    }
+
+    /**
+     * EXPERIMENTAL. Scrolling the app underneath takes a drag only the
+     * accessibility service can make, and this window off the screen for it
+     * to land on the app. So the service takes the tool over from here: this
+     * session closes, and the service's own overlay — the bubble's, which
+     * looks the same — comes back with the longer picture.
+     */
+    private fun captureMore(more: CropScreen.More) {
+        if (screenshot == null) return
+        val service = ScreenshotAccessibilityService.instance ?: return
+        if (service.adoptCaptureMore(more)) hide()
     }
 
     private fun deliver(action: Delivery, rect: Rect?) {

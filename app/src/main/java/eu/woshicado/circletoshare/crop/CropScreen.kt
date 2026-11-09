@@ -52,12 +52,37 @@ class CropScreen(context: Context) : FrameLayout(context) {
      */
     var onBackKey: (() -> Unit)? = null
 
+    /** The two ways to capture more: what is further up the list on screen,
+     *  or further down. */
+    enum class More { ABOVE, BELOW }
+
+    /**
+     * EXPERIMENTAL. What the "Capture more" buttons do, for a host that can
+     * scroll the app underneath and come back with a longer picture; they
+     * are only there while this is set.
+     */
+    var onCaptureMore: ((More) -> Unit)? = null
+        set(value) {
+            field = value
+            updateMoreButton()
+        }
+
+    /** Which of the two buttons there is anything behind. */
+    var captureMoreChoices: Set<More> = setOf(More.ABOVE, More.BELOW)
+        set(value) {
+            field = value
+            updateMoreButton()
+        }
+
     private val cropView = CropOverlayView(context)
     private val hintView: TextView
     private val buttonBar: ActionRow
     // Cancel while nothing is selected, Save once something is.
     private val dismissButton: TextView
     private val shareButton: TextView
+    private val moreRow: ActionRow
+    private val moreAboveButton: TextView
+    private val moreBelowButton: TextView
     private val qrPanel: LinearLayout
     private val qrPanelText: TextView
     private val qrPanelError: TextView
@@ -75,6 +100,9 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private var activeQr: QrCode? = null
 
     private var hasSelection = false
+
+    // The QR scan of [currentBitmap], while it runs.
+    private var qrScan: QrDetector.Scan? = null
 
     init {
         cropView.visibility = View.GONE
@@ -156,6 +184,34 @@ class CropScreen(context: Context) : FrameLayout(context) {
                 LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             ).apply { bottomMargin = dp(BAR_BOTTOM_MARGIN_DP) }
+        )
+
+        // A row of their own above the bar, not more buttons in it: the
+        // bar's three are a tight fit already.
+        moreAboveButton = pillButton(
+            context.getString(R.string.action_capture_more_above), R.drawable.ic_arrow_upward,
+            filled = false
+        ) {
+            onCaptureMore?.invoke(More.ABOVE)
+        }
+        moreBelowButton = pillButton(
+            context.getString(R.string.action_capture_more_below), R.drawable.ic_arrow_downward,
+            filled = false
+        ) {
+            onCaptureMore?.invoke(More.BELOW)
+        }
+        moreRow = ActionRow(context).apply {
+            visibility = View.GONE
+            addAction(moreAboveButton)
+            addAction(moreBelowButton)
+        }
+        addView(
+            moreRow,
+            LayoutParams(
+                LayoutParams.WRAP_CONTENT,
+                LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ).apply { bottomMargin = dp(BAR_BOTTOM_MARGIN_DP + 48 + MORE_GAP_DP) }
         )
 
         // Actions for a tapped QR code: the payload plus Copy/Open pills.
@@ -240,11 +296,15 @@ class CropScreen(context: Context) : FrameLayout(context) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         // The QR panel sits a fixed gap above the button bar — however tall
         // the bar has turned out (a large font size, or stacked buttons).
+        // "Capture more" likewise.
         if (buttonBar.visibility == View.GONE) return
         val params = qrPanel.layoutParams as LayoutParams
         val above = dp(BAR_BOTTOM_MARGIN_DP + QR_PANEL_GAP_DP) + buttonBar.measuredHeight
-        if (params.bottomMargin != above) {
+        val moreParams = moreRow.layoutParams as LayoutParams
+        val moreAbove = dp(BAR_BOTTOM_MARGIN_DP + MORE_GAP_DP) + buttonBar.measuredHeight
+        if (params.bottomMargin != above || moreParams.bottomMargin != moreAbove) {
             params.bottomMargin = above
+            moreParams.bottomMargin = moreAbove
             super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         }
     }
@@ -258,6 +318,8 @@ class CropScreen(context: Context) : FrameLayout(context) {
         setOnClickListener(null)
         isClickable = false
         currentBitmap = bitmap
+        qrScan?.cancel()
+        qrScan = null
         hideQrPanel()
         cropView.setBitmap(bitmap)
         cropView.setSnapBounds(snap)
@@ -267,13 +329,14 @@ class CropScreen(context: Context) : FrameLayout(context) {
         // session and bubble — funnel through here, so this covers them all.
         cropView.setQrHighlightColor(eu.woshicado.circletoshare.Prefs.getQrColor(context))
         if (eu.woshicado.circletoshare.Prefs.isQrDetectEnabled(context)) {
-            QrDetector.detect(bitmap) { codes ->
+            qrScan = QrDetector.detect(bitmap) { codes ->
                 if (currentBitmap === bitmap) cropView.setQrCodes(codes)
             }
         }
         cropView.visibility = View.VISIBLE
         hintView.visibility = View.VISIBLE
         buttonBar.visibility = View.VISIBLE
+        updateMoreButton()
         showSelectionActions(false)
 
         // Offer to restore the last crop only when it fits this exact capture.
@@ -307,9 +370,12 @@ class CropScreen(context: Context) : FrameLayout(context) {
         // if there was one: the screen underneath shows through instead.
         background = null
         currentBitmap = null
+        qrScan?.cancel()
+        qrScan = null
         hideQrPanel()
         cropView.visibility = View.GONE
         buttonBar.visibility = View.GONE
+        updateMoreButton()
         hintView.text = message
         hintView.setCompoundDrawablesRelative(null, null, null, null)
         // (In this order — see setBitmap.)
@@ -325,6 +391,8 @@ class CropScreen(context: Context) : FrameLayout(context) {
     fun clear() {
         background = null
         currentBitmap = null
+        qrScan?.cancel()
+        qrScan = null
         setOnClickListener(null)
         isClickable = false
         hideQrPanel()
@@ -335,6 +403,34 @@ class CropScreen(context: Context) : FrameLayout(context) {
         cropView.visibility = View.GONE
         hintView.visibility = View.GONE
         buttonBar.visibility = View.GONE
+        updateMoreButton()
+    }
+
+    /** The "Capture more" buttons show with the button bar, where there is
+     *  something for them to do, and only while nothing is selected: a
+     *  longer picture replaces the one the box was drawn on, and the box
+     *  with it. They also make way for the QR panel, which opens in the same
+     *  place. */
+    private fun updateMoreButton() {
+        val choices = captureMoreChoices
+        // The one there is nothing behind keeps its place, unseen: the other
+        // gets tapped again and again, and must not move from under the
+        // finger between two taps.
+        moreAboveButton.visibility = if (More.ABOVE in choices) View.VISIBLE else View.INVISIBLE
+        moreBelowButton.visibility = if (More.BELOW in choices) View.VISIBLE else View.INVISIBLE
+        moreRow.visibility =
+            if (onCaptureMore != null && choices.isNotEmpty() &&
+                buttonBar.visibility == View.VISIBLE &&
+                !hasSelection && qrPanel.visibility != View.VISIBLE
+            ) View.VISIBLE else View.GONE
+    }
+
+    override fun onDetachedFromWindow() {
+        // Taken off the screen for good (an overlay window is not reused):
+        // nobody is left to show what the scan finds.
+        qrScan?.cancel()
+        qrScan = null
+        super.onDetachedFromWindow()
     }
 
     /** See [CropOverlayView.setDisplayFrame]. */
@@ -374,11 +470,13 @@ class CropScreen(context: Context) : FrameLayout(context) {
         qrPanelError.visibility = View.GONE
         qrOpenButton.visibility = if (qrOpenUri(code.text) != null) View.VISIBLE else View.GONE
         qrPanel.visibility = View.VISIBLE
+        updateMoreButton()
     }
 
     private fun hideQrPanel() {
         activeQr = null
         qrPanel.visibility = View.GONE
+        updateMoreButton()
     }
 
     private fun copyQr(text: String) {
@@ -415,6 +513,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
     /** The bar's labels (and icons) for a selection present or not. */
     private fun showSelectionActions(selected: Boolean) {
         hasSelection = selected
+        updateMoreButton()
         shareButton.text = context.getString(
             if (selected) R.string.action_share else R.string.action_share_full
         )
@@ -490,6 +589,7 @@ class CropScreen(context: Context) : FrameLayout(context) {
     private companion object {
         const val BAR_BOTTOM_MARGIN_DP = 48
         const val QR_PANEL_GAP_DP = 24
+        const val MORE_GAP_DP = 12
         const val ICON_SIZE_DP = 18
         const val ICON_PADDING_DP = 8
     }

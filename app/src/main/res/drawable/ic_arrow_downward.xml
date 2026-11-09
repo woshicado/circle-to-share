@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A plain downward arrow on the grid the other icons use. Untinted: the
+     crop screen tints it to its button's text color in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M440,160L440,647L216,423L160,480L480,800L800,480L744,423L520,647L520,160Z" />
+</vector>

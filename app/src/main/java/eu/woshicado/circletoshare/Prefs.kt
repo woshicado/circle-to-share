@@ -1,8 +1,10 @@
 package eu.woshicado.circletoshare
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Rect
+import kotlin.math.roundToInt
 
 /** Small app-wide preferences (same store the accessibility service uses). */
 object Prefs {
@@ -12,6 +14,35 @@ object Prefs {
     private const val KEY_QR = "qr_detect"
     private const val KEY_QR_COLOR = "qr_color"
     private const val KEY_A11Y_CONSENT = "a11y_consent"
+    private const val KEY_CAPTURE_MORE = "capture_more"
+    private const val KEY_TRIGGERS_EXPANDED = "triggers_expanded"
+    private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
+    private const val KEY_CAPTURE_MORE_HANDLES = "capture_more_handles"
+
+    // The apps with settings of their own (see setAppOverride), and where
+    // each of an app's is kept.
+    private const val KEY_APP_OVERRIDES = "scrollshot_apps"
+    private fun appKey(packageName: String, setting: String) = "scrollshot_app.$packageName.$setting"
+
+    /** Where [setting] is kept for a capture of [packageName], if that is
+     *  an app with settings of its own; null if the general one counts. */
+    private fun ownKey(prefs: SharedPreferences, packageName: String?, setting: String): String? =
+        packageName
+            ?.takeIf { prefs.getStringSet(KEY_APP_OVERRIDES, null)?.contains(it) == true }
+            ?.let { appKey(it, setting) }
+    private const val APP_STEP = "step"
+    private const val APP_HANDLES = "handles"
+    private const val APP_SNAP = "snap"
+
+    // How much of the list one "Capture more" step scrolls, in percent of
+    // the list's height. Half by default: the other half is on screen in
+    // both frames, to line them up by. Less is surer (more to go by) and
+    // slower; more is the other way round, and at the top end leaves too
+    // little in common to join pages that change as they go.
+    const val CAPTURE_MORE_STEP_MIN = 20
+    const val CAPTURE_MORE_STEP_MAX = 80
+    const val CAPTURE_MORE_STEP_STEP = 5
+    const val CAPTURE_MORE_STEP_DEFAULT = 50
 
     /** Default QR highlight color (gold). */
     const val QR_COLOR_DEFAULT = "#FFCA28"
@@ -48,15 +79,132 @@ object Prefs {
             .edit().putBoolean(KEY_FREEFORM, enabled).apply()
     }
 
-    /** True = crop edges snap to on-screen element bounds (needs the
-     *  accessibility service). Off by default. */
-    fun isSnapEnabled(context: Context): Boolean =
-        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .getBoolean(KEY_SNAP, false)
+    /**
+     * True = crop edges snap to on-screen element bounds (needs the
+     * accessibility service). Off by default.
+     *
+     * With [packageName]: for a capture of that app — its own setting if it
+     * has one (see [setAppOverride]), this one otherwise.
+     */
+    fun isSnapEnabled(context: Context, packageName: String? = null): Boolean {
+        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val general = prefs.getBoolean(KEY_SNAP, false)
+        return ownKey(prefs, packageName, APP_SNAP)?.let { prefs.getBoolean(it, general) } ?: general
+    }
 
-    fun setSnapEnabled(context: Context, enabled: Boolean) {
+    /** True if some app's own snap setting is not the general one: only
+     *  then does it matter which app a capture is of. */
+    fun snapDependsOnApp(context: Context): Boolean {
+        val general = isSnapEnabled(context)
+        return getAppOverrides(context).any { isSnapEnabled(context, it) != general }
+    }
+
+    /** [packageName] null: the general setting. Else that app's own, which
+     *  only counts while the app has an override. */
+    fun setSnapEnabled(context: Context, enabled: Boolean, packageName: String? = null) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(packageName?.let { appKey(it, APP_SNAP) } ?: KEY_SNAP, enabled)
+            .apply()
+    }
+
+    // --- Settings of an app's own ----------------------------------------------
+
+    /** The apps (package names) that have settings of their own for what
+     *  can differ from app to app: the scrollshot step, the removal of
+     *  scroll handles, and snapping. */
+    fun getAppOverrides(context: Context): Set<String> =
+        // (A copy: the set SharedPreferences hands out must not be changed.)
+        HashSet(
+            context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getStringSet(KEY_APP_OVERRIDES, emptySet()) ?: emptySet()
+        )
+
+    /**
+     * Give [packageName] settings of its own, starting out as the general
+     * ones are now — or, with [enabled] false, take them away again: the
+     * app is back on the general ones, and what it had is forgotten.
+     */
+    fun setAppOverride(context: Context, packageName: String, enabled: Boolean) {
+        val apps = getAppOverrides(context).toMutableSet()
+        val editor = context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+        if (enabled) {
+            if (!apps.add(packageName)) return
+            editor.putInt(appKey(packageName, APP_STEP), getCaptureMoreStep(context))
+                .putBoolean(appKey(packageName, APP_HANDLES), isCaptureMoreHandleRemovalEnabled(context))
+                .putBoolean(appKey(packageName, APP_SNAP), isSnapEnabled(context))
+        } else {
+            apps.remove(packageName)
+            editor.remove(appKey(packageName, APP_STEP))
+                .remove(appKey(packageName, APP_HANDLES))
+                .remove(appKey(packageName, APP_SNAP))
+        }
+        editor.putStringSet(KEY_APP_OVERRIDES, apps).apply()
+    }
+
+    /** True = the crop tool offers scrollshots: the "More above" and "More
+     *  below" buttons (EXPERIMENTAL; needs the accessibility service). Off by
+     *  default: who has them has switched them on, and been told then what
+     *  experimental means (see ExperimentalNoticeDialog). */
+    fun isCaptureMoreEnabled(context: Context): Boolean =
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-            .edit().putBoolean(KEY_SNAP, enabled).apply()
+            .getBoolean(KEY_CAPTURE_MORE, false)
+
+    fun setCaptureMoreEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_CAPTURE_MORE, enabled).apply()
+    }
+
+    /**
+     * Always a value the settings slider accepts: in range and on a step.
+     * With [packageName]: for a scrollshot of that app — its own step if it
+     * has one (see [setAppOverride]), the general one otherwise.
+     */
+    fun getCaptureMoreStep(context: Context, packageName: String? = null): Int {
+        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val general = prefs.getInt(KEY_CAPTURE_MORE_STEP, CAPTURE_MORE_STEP_DEFAULT)
+        val stored = ownKey(prefs, packageName, APP_STEP)?.let { prefs.getInt(it, general) } ?: general
+        val steps = ((stored - CAPTURE_MORE_STEP_MIN).toFloat() / CAPTURE_MORE_STEP_STEP).roundToInt()
+        return (CAPTURE_MORE_STEP_MIN + steps * CAPTURE_MORE_STEP_STEP)
+            .coerceIn(CAPTURE_MORE_STEP_MIN, CAPTURE_MORE_STEP_MAX)
+    }
+
+    /** [packageName] as for [setSnapEnabled]. */
+    fun setCaptureMoreStep(context: Context, percent: Int, packageName: String? = null) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+            .putInt(packageName?.let { appKey(it, APP_STEP) } ?: KEY_CAPTURE_MORE_STEP, percent)
+            .apply()
+    }
+
+    /**
+     * True = a scrollshot paints over a scrollbar's handle where it finds
+     * one in a frame (default). A best guess, so it can be wrong: off,
+     * every frame goes into the picture as it was taken. [packageName] as
+     * for [getCaptureMoreStep].
+     */
+    fun isCaptureMoreHandleRemovalEnabled(context: Context, packageName: String? = null): Boolean {
+        val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+        val general = prefs.getBoolean(KEY_CAPTURE_MORE_HANDLES, true)
+        return ownKey(prefs, packageName, APP_HANDLES)?.let { prefs.getBoolean(it, general) } ?: general
+    }
+
+    /** [packageName] as for [setSnapEnabled]. */
+    fun setCaptureMoreHandleRemovalEnabled(
+        context: Context, enabled: Boolean, packageName: String? = null
+    ) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+            .putBoolean(packageName?.let { appKey(it, APP_HANDLES) } ?: KEY_CAPTURE_MORE_HANDLES, enabled)
+            .apply()
+    }
+
+    /** Whether the settings screen shows its "How to open it" section
+     *  unfolded: as the user left it, open to begin with. */
+    fun isTriggersExpanded(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_TRIGGERS_EXPANDED, true)
+
+    fun setTriggersExpanded(context: Context, expanded: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_TRIGGERS_EXPANDED, expanded).apply()
     }
 
     /** True = scan each capture for QR codes and highlight them (default on).
