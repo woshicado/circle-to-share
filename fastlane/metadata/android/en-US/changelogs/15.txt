@@ -1,0 +1,4 @@
+* Sideways scrollshots: "More left" / "More right" on any selection, with best-effort auto discovery (experimental)
+* Pinch to zoom and pan in the crop tool (needed for larger scrollshots)
+* Crop edges optionally snap to the screen borders
+* GrapheneOS (and possibly others): choose Circle to Share under Settings > System > Language & region > Speech > Voice input, so it stays the assistant after a restart

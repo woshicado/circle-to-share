@@ -188,17 +188,22 @@ internal object ScrollStitcher {
         val told = reported in 1..(expected * REPORTED_MAX).toInt()
         val guess = if (told) reported.coerceIn(1, farthest) else want
 
-        // First where the app says it went, if it says: rows that repeat
-        // line up in several places, and the app knows which is the one.
-        if (told) {
+        // First where the app says it went, if it says — however far, as
+        // long as the frames can still be compared there: rows that repeat
+        // line up in several places, and the app knows which is the one;
+        // and a pager snaps to a whole page, far beyond what was asked.
+        if (reported in 1..farthest) {
             val there = best(
-                prev, cur, top, bottom, minRows, guess,
-                from = max(1, guess - REPORTED_SLACK), to = min(farthest, guess + REPORTED_SLACK)
+                prev, cur, top, bottom, minRows, reported,
+                from = max(1, reported - REPORTED_SLACK), to = min(farthest, reported + REPORTED_SLACK)
             )
             // (Where the picture's best guess and the app's account agree
-            // to the pixel, that is two witnesses: less will do.)
+            // to the pixel, that is two witnesses: less will do — for an
+            // account near what was asked. One far beyond it may be a
+            // pager's whole page, or two nested lists both reporting: only
+            // frames that plainly agree there settle it.)
             if (there.convincing() ||
-                (there.score >= ACCEPT_SCORE_LONE && abs(there.offset - guess) <= REPORTED_EXACT)
+                (told && there.score >= ACCEPT_SCORE_LONE && abs(there.offset - reported) <= REPORTED_EXACT)
             ) {
                 return moved(prev, cur, there, top, bottom)
             }
@@ -247,10 +252,22 @@ internal object ScrollStitcher {
         // and not by moving: a carousel turning, a video playing.
         if (band < h / SMALL_BAND) return Match(Verdict.UNCHANGED, 0, top, bottom, still)
         // (The join is placed as if the guess were right: if it is, a
-        // header at the top is cleared as usual; if not, nothing is lost.)
+        // header at the top is cleared as usual; if not, nothing is lost.
+        // Asked for a whole page — a pager with no account of its own —
+        // the new frame goes on after the old, with nothing in common.
+        // Where the app says how far it went, that is the best guess
+        // there is, however far beyond what was asked, as long as it is
+        // within the frame: a pager snaps to the next page, whose frames
+        // share nothing, and a join at the distance asked would take the
+        // start of that page for the end of the last.)
+        val placed = when {
+            expected >= band -> band
+            reported in 1..band -> reported
+            else -> guess
+        }
         return Match(
-            Verdict.UNSURE, guess, top, bottom, max(near.score, anywhere.score),
-            seamRow(prev, cur, guess, top, bottom)
+            Verdict.UNSURE, placed, top, bottom, max(near.score, anywhere.score),
+            seamRow(prev, cur, placed, top, bottom)
         )
     }
 

@@ -35,6 +35,8 @@ class CropScreenTest {
     private lateinit var screen: CropScreen
 
     private var qrDetectionWasOn = true
+    // The remembered crop as found (its six keys), to put back.
+    private var lastCropWas: Map<String, Int> = emptyMap()
 
     @Before
     fun setUp() = onMain {
@@ -43,6 +45,8 @@ class CropScreenTest {
         // whenever it arrives and replaces any codes a test has put in.
         qrDetectionWasOn = Prefs.isQrDetectEnabled(context)
         Prefs.setQrDetectEnabled(context, false)
+        lastCropWas = context.getSharedPreferences("cts", Context.MODE_PRIVATE).all
+            .filterKeys { it.startsWith("last_crop_") }.mapValues { it.value as Int }
         screen = CropScreen(context)
         // A size no real capture has, so no remembered crop can match it and
         // the hint is the plain, non-interactive one.
@@ -64,6 +68,13 @@ class CropScreenTest {
     @After
     fun tearDown() {
         Prefs.setQrDetectEnabled(context, qrDetectionWasOn)
+        // (A test that started a sideways run remembered its selection as
+        // the last crop: back to what was remembered before.)
+        context.getSharedPreferences("cts", Context.MODE_PRIVATE).edit().apply {
+            for (key in listOf("last_crop_l", "last_crop_t", "last_crop_r", "last_crop_b", "last_crop_w", "last_crop_h")) {
+                lastCropWas[key]?.let { putInt(key, it) } ?: remove(key)
+            }
+        }.apply()
         // That write is asynchronous, and the test process is killed when the
         // run ends: flush, so the restored setting is what stays on the
         // device. ("cts" is the app's preference file — see Prefs.)
@@ -411,6 +422,246 @@ class CropScreenTest {
         }
         assertFalse(shows(above))
         assertFalse(shows(below))
+    }
+
+    /** The "↔" button, found by what it says of itself (it has no label). */
+    private fun sidewaysButton(): View = findByDescription(screen, context.getString(R.string.action_capture_sideways))!!
+
+    private fun findByDescription(root: View, description: String): View? {
+        if (root.contentDescription?.toString() == description) return root
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) findByDescription(root.getChildAt(i), description)?.let { return it }
+        }
+        return null
+    }
+
+    @Test
+    fun sidewaysIsOffered_betweenTheTwo_whileNoRunHasBegun() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        val sideways = sidewaysButton()
+        onMain {
+            screen.onCaptureMore = {}
+            layOut()
+        }
+        // Not without a host for it.
+        assertFalse(shows(sideways))
+        var asked = 0
+        onMain {
+            screen.onCaptureSideways = { asked++ }
+            layOut()
+        }
+        assertTrue(shows(sideways))
+        assertTrue("between the two", above.right <= sideways.left && sideways.right <= below.left)
+        onMain { sideways.performClick() }
+        assertEquals(1, asked)
+        // Gone once the picture has grown one way...
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.BELOW)
+            layOut()
+        }
+        assertFalse(shows(sideways))
+        // ...and in a sideways run, which has buttons of its own.
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.LEFT, CropScreen.More.RIGHT)
+            layOut()
+        }
+        assertFalse(shows(sideways))
+        assertFalse(shows(above))
+        assertTrue(shows(moreButton(R.string.action_capture_more_left)))
+        assertTrue(shows(moreButton(R.string.action_capture_more_right)))
+    }
+
+    @Test
+    fun aCropOfAScrollshot_isNotRemembered() {
+        // The crop of the screen before stays the one to restore.
+        Prefs.saveLastCrop(context, Rect(10, 20, 300, 400), WIDTH, HEIGHT)
+        val (dismiss, _, _) = barButtons()
+        onMain {
+            screen.callbacks = object : CropScreen.Callbacks {
+                override fun onDeliver(action: Delivery, rect: Rect?) = Unit
+                override fun onCancel() = Unit
+            }
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT * 3, Bitmap.Config.ARGB_8888), scrollshot = true)
+            findCropView(screen)!!.applyCropRect(Rect(100, 2000, 600, 4000))
+            layOut()
+            dismiss.performClick() // Save
+        }
+        assertEquals(Rect(10, 20, 300, 400), Prefs.getLastCropFor(context, WIDTH, HEIGHT))
+        assertNull(Prefs.getLastCropFor(context, WIDTH, HEIGHT * 3))
+    }
+
+    @Test
+    fun nothingScrollingSideways_stillOffersTheLastCrop() {
+        Prefs.saveLastCrop(context, Rect(10, 20, 300, 400), WIDTH, HEIGHT)
+        val crop = findCropView(screen)!!
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onCaptureSideways = {}
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            layOut()
+        }
+        assertNotNull(findText(screen, context.getString(R.string.crop_hint_restore)))
+        onMain {
+            screen.pickArea(emptyList())
+            layOut()
+        }
+        val hint = findText(screen, context.getString(R.string.capture_sideways_none_restore))
+        assertNotNull("the hint says both: no row, and the crop to restore", hint)
+        assertTrue(hint!!.isClickable)
+        onMain { hint.performClick() }
+        assertEquals(Rect(10, 20, 300, 400), crop.getCropRect())
+    }
+
+    @Test
+    fun nothingScrollingSideways_saysSo_andOnlyTakesTheSidewaysButtonAway() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val below = moreButton(R.string.action_capture_more_below)
+        val sideways = sidewaysButton()
+        val left = moreButton(R.string.action_capture_more_left)
+        val crop = findCropView(screen)!!
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onCaptureSideways = {}
+            screen.onSidewaysRun = { _, _ -> }
+            layOut()
+        }
+        assertTrue(shows(sideways))
+        onMain {
+            screen.pickArea(emptyList())
+            layOut()
+        }
+        // The same view, told: the vertical buttons stay, the "↔" goes.
+        assertFalse(screen.pickingArea)
+        assertTrue(shows(above))
+        assertTrue(shows(below))
+        assertFalse(shows(sideways))
+        assertEquals(
+            context.getString(R.string.capture_sideways_none),
+            findText(screen, context.getString(R.string.capture_sideways_none))?.text?.toString()
+        )
+        // A box drawn by hand offers the sideways run as ever...
+        onMain {
+            crop.applyCropRect(Rect(100, 800, 900, 1100))
+            layOut()
+        }
+        assertTrue(shows(left))
+        // ...and cleared, the word stays until the next capture.
+        onMain {
+            crop.clear()
+            layOut()
+        }
+        assertFalse(shows(sideways))
+        assertNotNull(findText(screen, context.getString(R.string.capture_sideways_none)))
+        onMain {
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            layOut()
+        }
+        assertTrue(shows(sideways))
+        assertNull(findText(screen, context.getString(R.string.capture_sideways_none)))
+    }
+
+    @Test
+    fun choosingARow_byTapOrByBox_startsASidewaysRunFromTheSelection() {
+        val above = moreButton(R.string.action_capture_more_above)
+        val left = moreButton(R.string.action_capture_more_left)
+        val right = moreButton(R.string.action_capture_more_right)
+        val crop = findCropView(screen)!!
+        var started: Pair<Rect, CropScreen.More>? = null
+        onMain {
+            screen.onCaptureMore = {}
+            screen.onCaptureSideways = {}
+            screen.onSidewaysRun = { area, more -> started = area to more }
+            layOut()
+        }
+        val areas = listOf(Rect(0, 200, WIDTH, 500), Rect(0, 1200, WIDTH, 1500))
+        onMain {
+            screen.pickArea(areas)
+            layOut()
+        }
+        // Choosing: the vertical buttons are away, and so are the sideways
+        // ones until something is selected; the hint says what to do.
+        assertTrue(screen.pickingArea)
+        assertFalse(shows(above))
+        assertFalse(shows(right))
+        assertEquals(
+            context.getString(R.string.capture_sideways_pick),
+            findText(screen, context.getString(R.string.capture_sideways_pick))?.text?.toString()
+        )
+        // A tap on the second outline makes it the selection...
+        val where = crop.mapToView(areas[1])
+        onMain {
+            val picker = findByDescriptionLess(screen, "AreaPickerView")!!
+            val x = where.centerX()
+            val y = where.centerY()
+            picker.dispatchTouchEvent(android.view.MotionEvent.obtain(0, 0, android.view.MotionEvent.ACTION_DOWN, x, y, 0))
+            picker.dispatchTouchEvent(android.view.MotionEvent.obtain(0, 10, android.view.MotionEvent.ACTION_UP, x, y, 0))
+            layOut()
+        }
+        assertEquals(areas[1], crop.getCropRect())
+        assertTrue(shows(left))
+        assertTrue(shows(right))
+        assertEquals(
+            context.getString(R.string.capture_sideways_go),
+            findText(screen, context.getString(R.string.capture_sideways_go))?.text?.toString()
+        )
+        // ...and "More right" starts the run of it.
+        onMain { right.performClick() }
+        assertEquals(areas[1] to CropScreen.More.RIGHT, started)
+        assertFalse(screen.pickingArea)
+
+        // A box of the user's own does as well — with no outlines asked for:
+        // every selection offers the two, while no run has begun.
+        onMain {
+            crop.applyCropRect(Rect(100, 800, 900, 1100))
+            layOut()
+        }
+        assertFalse(screen.pickingArea)
+        assertTrue(shows(left))
+        assertFalse(shows(above))
+        onMain { left.performClick() }
+        assertEquals(Rect(100, 800, 900, 1100) to CropScreen.More.LEFT, started)
+        // And is remembered, as a shared crop is, for the next capture of
+        // the same screen.
+        assertEquals(Rect(100, 800, 900, 1100), Prefs.getLastCropFor(context, WIDTH, HEIGHT))
+        // Not in a sideways run, whose buttons are its steps.
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.RIGHT)
+            crop.applyCropRect(Rect(100, 800, 900, 1100))
+            layOut()
+        }
+        assertFalse(shows(left))
+        assertFalse(shows(right))
+        onMain {
+            screen.captureMoreChoices = setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
+            crop.clear()
+        }
+
+        // Back while choosing only leaves the choosing; a new capture too.
+        var backs = 0
+        onMain {
+            screen.onBackKey = { backs++ }
+            screen.pickArea(areas)
+            screen.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+            screen.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+        }
+        assertEquals(0, backs)
+        assertFalse(screen.pickingArea)
+        onMain {
+            screen.pickArea(areas)
+            screen.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+            layOut()
+        }
+        assertFalse(screen.pickingArea)
+        assertTrue(shows(above))
+    }
+
+    private fun findByDescriptionLess(root: View, className: String): View? {
+        if (root.javaClass.simpleName == className) return root
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) findByDescriptionLess(root.getChildAt(i), className)?.let { return it }
+        }
+        return null
     }
 
     @Test

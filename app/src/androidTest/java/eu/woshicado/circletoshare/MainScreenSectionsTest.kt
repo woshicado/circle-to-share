@@ -344,4 +344,90 @@ class MainScreenSectionsTest {
             }
         }
     }
+
+    @Test
+    fun aServiceSetButNotRunning_isShownAsSuch_withTheStepsOpen() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                fun status(id: Int) = activity.findViewById<TextView>(id).text.toString()
+                activity.showSetupStatus(
+                    isAssistant = true, assistantStale = true, fallbackEnabled = true, fallbackStale = true
+                )
+                assertEquals(activity.getString(R.string.status_assistant_stale), status(R.id.status_assistant))
+                assertEquals(activity.getString(R.string.status_fallback_stale), status(R.id.status_accessibility))
+                // Not done, then: the steps are open, and the header says so.
+                assertEquals(true, activity.shows(R.id.setup_content))
+                assertEquals(
+                    "✗ Assistant · ✗ Fallback",
+                    activity.findViewById<TextView>(R.id.setup_summary).text.toString()
+                )
+                // Running again: done.
+                activity.showSetupStatus(
+                    isAssistant = true, assistantStale = false, fallbackEnabled = true, fallbackStale = false
+                )
+                assertEquals(activity.getString(R.string.status_assistant_on), status(R.id.status_assistant))
+                assertEquals(activity.getString(R.string.status_fallback_on), status(R.id.status_accessibility))
+            }
+        }
+    }
+
+    @Test
+    fun anAssistantWithoutVoiceInput_isNotDone_andIsShownTheWayToTheLanguageSettings() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                fun status(id: Int) = activity.findViewById<TextView>(id).text.toString()
+                activity.showSetupStatus(
+                    isAssistant = true, assistantStale = false, fallbackEnabled = true, fallbackStale = false,
+                    voiceInputMissing = true
+                )
+                assertEquals(
+                    activity.getString(R.string.status_assistant_no_voice_input), status(R.id.status_assistant)
+                )
+                assertEquals(true, activity.shows(R.id.voice_input_group))
+                assertEquals(true, activity.shows(R.id.setup_content))
+                assertEquals(
+                    "✗ Assistant · ✓ Fallback",
+                    activity.findViewById<TextView>(R.id.setup_summary).text.toString()
+                )
+                // Chosen: done, and the hint goes.
+                activity.showSetupStatus(
+                    isAssistant = true, assistantStale = false, fallbackEnabled = true, fallbackStale = false,
+                    voiceInputMissing = false
+                )
+                assertEquals(activity.getString(R.string.status_assistant_on), status(R.id.status_assistant))
+                assertEquals(false, activity.shows(R.id.voice_input_group))
+                // Set and not running, and no voice input: the stale status
+                // says what to do now, the hint what keeps it.
+                activity.showSetupStatus(
+                    isAssistant = true, assistantStale = true, fallbackEnabled = true, fallbackStale = false,
+                    voiceInputMissing = true
+                )
+                assertEquals(activity.getString(R.string.status_assistant_stale), status(R.id.status_assistant))
+                assertEquals(true, activity.shows(R.id.voice_input_group))
+            }
+        }
+    }
+
+    @Test
+    fun snapToScreenBorders_isAPlainSwitch_onByDefault() {
+        val prefs = prefs()
+        val was = prefs.takeIf { it.contains("snap_to_edges") }?.getBoolean("snap_to_edges", true)
+        try {
+            prefs.edit().remove("snap_to_edges").commit()
+            assertEquals(true, Prefs.isSnapToEdgesEnabled(context))
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity { activity ->
+                    val switch = activity.findViewById<MaterialSwitch>(R.id.switch_snap_edges)
+                    assertEquals(true, switch.isChecked)
+                    // Right above "Snap to screen content".
+                    val snap = activity.findViewById<View>(R.id.switch_snap)
+                    assertEquals(true, switch.bottom <= snap.top)
+                    switch.performClick()
+                }
+            }
+            assertEquals(false, Prefs.isSnapToEdgesEnabled(context))
+        } finally {
+            prefs.edit().apply { was?.let { putBoolean("snap_to_edges", it) } ?: remove("snap_to_edges") }.commit()
+        }
+    }
 }

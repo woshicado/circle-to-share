@@ -153,7 +153,7 @@ internal class ScrollPicture(
     fun join(
         going: Direction, frame: Bitmap, expected: Int, reported: Int, minTop: Int, minBottom: Int
     ): Joined {
-        val unchanged = Joined(Outcome.END, null, null, lastFrameTop)
+        val unchanged = Joined(Outcome.STILL, null, null, lastFrameTop)
         val soFar = bitmap ?: return unchanged
         val last = lastFrame ?: return unchanged
         if (frame.width != soFar.width || frame.height != frameHeight) {

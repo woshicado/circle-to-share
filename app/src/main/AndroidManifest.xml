@@ -81,14 +81,20 @@
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 
-        <!-- Required stub so the app is listed as an eligible assistant. -->
+        <!-- Required stub so the app is listed as an eligible assistant — and,
+             with its meta-data, in Settings' "Voice input" picker (see
+             res/xml/recognition_service.xml). -->
         <service
             android:name=".assist.StubRecognitionService"
             android:exported="true"
-            android:label="@string/app_name">
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_RECOGNITION_SERVICE">
             <intent-filter>
                 <action android:name="android.speech.RecognitionService" />
             </intent-filter>
+            <meta-data
+                android:name="android.speech"
+                android:resource="@xml/recognition_service" />
         </service>
 
         <!-- Fallback screen capture for ROMs that don't hand assistants a screenshot. -->

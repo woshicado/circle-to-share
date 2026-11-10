@@ -27,6 +27,7 @@ import eu.woshicado.circletoshare.R
 import eu.woshicado.circletoshare.RingWatcher
 import eu.woshicado.circletoshare.animationSettleMs
 import eu.woshicado.circletoshare.capture.ScreenshotAccessibilityService
+import eu.woshicado.circletoshare.capture.ScrollCapture
 import eu.woshicado.circletoshare.crop.CropScreen
 import eu.woshicado.circletoshare.share.Delivery
 import eu.woshicado.circletoshare.share.ShareHelper
@@ -58,6 +59,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
     // moment, so the app's node tree is still fully visible. Collecting later
     // (when the screenshot arrives) yields a sparse, occlusion-clipped set.
     private var pendingSnap: eu.woshicado.circletoshare.crop.SnapBounds? = null
+    private var pendingAreas: List<Rect> = emptyList()
+    // Whether the picture taken over from the bubble's tool is a scrollshot.
+    private var pendingScrollshot = false
     // When the session was shown — anchor for the zoom-settle deadline below.
     private var showUptime = 0L
 
@@ -239,6 +243,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         pendingSnap = ScreenshotAccessibilityService.instance
             ?.takeIf { it.snapEnabledNow() }
             ?.collectSnapBounds()
+        // The same for what scrolls sideways, for the "↔" button.
+        pendingAreas = ScreenshotAccessibilityService.instance?.sidewaysAreasNow() ?: emptyList()
         if (!watchingScreen) {
             watchingScreen = true
             context.registerReceiver(
@@ -270,13 +276,6 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         ShareHelper.cleanupCache(context)
 
         val service = ScreenshotAccessibilityService.instance
-        // "Capture more" is the accessibility service's to do (see
-        // captureMore): offered only where it runs and may be used.
-        cropScreen.captureMoreChoices = setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
-        cropScreen.onCaptureMore =
-            if (service != null && Prefs.hasAccessibilityConsent(context) &&
-                Prefs.isCaptureMoreEnabled(context)
-            ) ({ captureMore(it) }) else null
         if (afterUnlock && service == null) {
             // Nothing here can take a picture of what the unlock revealed.
             // Asking again, now that the device is unlocked, will get one
@@ -290,7 +289,22 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         // Its snap bounds with it: the ones collected just now describe the
         // app as it is at this moment, which the frozen picture may no longer
         // match (moving content, or a rotation since).
-        if (reuse != null) pendingSnap = service.openOverlaySnapBounds()
+        if (reuse != null) {
+            pendingSnap = service.openOverlaySnapBounds()
+            pendingAreas = service.openOverlaySidewaysAreas()
+            pendingScrollshot = service.openOverlayIsGrown()
+        }
+        // "Capture more" is the accessibility service's to do (see
+        // captureMore): offered only where it runs and may be used — and not
+        // over a picture the bubble's tool had already grown: its run does
+        // not come across, so a step would start over from one screen, and
+        // a box on it is not on the screen.
+        cropScreen.captureMoreChoices = setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
+        val offered = service != null && Prefs.hasAccessibilityConsent(context) &&
+            Prefs.isCaptureMoreEnabled(context) && !pendingScrollshot
+        cropScreen.onCaptureMore = if (offered) ({ captureMore(it) }) else null
+        cropScreen.onCaptureSideways = if (offered) ({ pickSidewaysArea() }) else null
+        cropScreen.onSidewaysRun = if (offered) ({ area, more -> captureSideways(area, more) }) else null
         // (A notice counts like the bubble: "Unlock the device first", then
         // unlocking and asking again, finds it still up.)
         val bubbleWasShowing =
@@ -411,6 +425,8 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
         screenshot = null
         fallbackSystemShot = null
         pendingSnap = null
+        pendingAreas = emptyList()
+        pendingScrollshot = false
         awaitingOwnCapture = false
         // Drop the frozen image now, so the next show doesn't flash this
         // session's (possibly sensitive) screenshot while the new capture is
@@ -494,7 +510,7 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             "assist shot ${software.width}x${software.height}, " +
                 "snap rects: ${pendingSnap?.rects?.size ?: 0}"
         )
-        cropScreen.setBitmap(software, pendingSnap)
+        cropScreen.setBitmap(software, pendingSnap, pendingScrollshot)
     }
 
     /**
@@ -505,10 +521,28 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
      * looks the same — comes back with the longer picture.
      */
     private fun captureMore(more: CropScreen.More) {
-        if (screenshot == null) return
+        val shot = screenshot ?: return
         val service = ScreenshotAccessibilityService.instance ?: return
-        if (service.adoptCaptureMore(more)) hide()
+        if (service.adoptCaptureMore(more, shot, pendingSnap, pendingAreas)) hide()
     }
+
+    /** The "↔" button: the parts of the screen that scroll sideways,
+     *  outlined for the user to choose a row from (or draw one). */
+    private fun pickSidewaysArea() {
+        val shot = screenshot ?: return
+        cropScreen.pickArea(pendingAreas.map { ScrollCapture.toPicture(it, display(), shot) })
+    }
+
+    /** "More left" or "More right" over a chosen row: the run of it is the
+     *  service's (see [ScreenshotAccessibilityService.adoptCaptureSideways]). */
+    private fun captureSideways(inPicture: Rect, more: CropScreen.More) {
+        val shot = screenshot ?: return
+        val service = ScreenshotAccessibilityService.instance ?: return
+        val area = ScrollCapture.toDisplay(inPicture, display(), shot)
+        if (service.adoptCaptureSideways(area, more, shot, pendingSnap, pendingAreas, inPicture)) hide()
+    }
+
+    private fun display(): Rect = ScrollCapture.displayBounds(context)
 
     private fun deliver(action: Delivery, rect: Rect?) {
         val bitmap = screenshot ?: return

@@ -65,26 +65,50 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <LinearLayout
+            <!-- A table, so that the longer label sets where both sliders start,
+                 and they are one length. -->
+            <TableLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_marginTop="4dp"
+                android:shrinkColumns="1"
+                android:stretchColumns="1">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:importantForAccessibility="no"
-                    android:text="@string/capture_more_step"
-                    android:textSize="14sp" />
+                <TableRow>
 
-                <com.google.android.material.slider.Slider
-                    android:id="@+id/app_step"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:contentDescription="@string/capture_more_step" />
-            </LinearLayout>
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_vertical"
+                        android:importantForAccessibility="no"
+                        android:text="@string/capture_more_step"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/app_step"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/capture_more_step" />
+                </TableRow>
+
+                <TableRow
+                    android:layout_marginTop="8dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center_vertical"
+                        android:importantForAccessibility="no"
+                        android:text="@string/capture_more_step_sideways"
+                        android:textSize="14sp" />
+
+                    <com.google.android.material.slider.Slider
+                        android:id="@+id/app_step_sideways"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/capture_more_step_sideways" />
+                </TableRow>
+            </TableLayout>
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/app_handles"

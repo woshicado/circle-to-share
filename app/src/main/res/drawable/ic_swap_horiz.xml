@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "swap_horiz" (Apache License 2.0), on the grid the other
+     icons use. Untinted: the crop screen tints it to its button's text
+     color in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="960"
+    android:viewportHeight="960">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M280,760L80,560L280,360L336,416L232,520L520,520L520,600L232,600L336,704L280,760ZM680,600L624,544L728,440L440,440L440,360L728,360L624,256L680,200L880,400L680,600Z" />
+</vector>

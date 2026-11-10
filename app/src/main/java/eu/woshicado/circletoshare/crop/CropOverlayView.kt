@@ -14,6 +14,7 @@ import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewConfiguration
 import androidx.core.graphics.withSave
@@ -214,6 +215,7 @@ class CropOverlayView @JvmOverloads constructor(
     private var snapXs = FloatArray(0)
     private var snapYs = FloatArray(0)
     private val snapThreshold = dp(10f)
+    private val edgeSnap = dp(12f)
     // Currently engaged snap line per axis (NaN = free) — tracked only to fire
     // one haptic tick per engagement, not to make snapping stateful.
     private var engagedSnapX = Float.NaN
@@ -279,6 +281,7 @@ class CropOverlayView @JvmOverloads constructor(
 
     fun setBitmap(b: Bitmap) {
         bitmap = b
+        userMatrix.reset()
         selection = null
         selectionAtDown = null
         qrSelectionActive = false
@@ -520,6 +523,23 @@ class CropOverlayView @JvmOverloads constructor(
         return line
     }
 
+    /**
+     * [value] pulled onto [low] or [high] — the picture's edge — where it
+     * comes within [edgeSnap] of it, and kept between them anyway. A finger
+     * seldom reaches the very edge of the screen, and under a phone case
+     * cannot: a box meant to span the width would always fall short.
+     */
+    private fun toEdge(value: Float, low: Float, high: Float): Float = when {
+        !snapToEdges -> value.coerceIn(low, high)
+        value <= low + edgeSnap -> low
+        value >= high - edgeSnap -> high
+        else -> value
+    }
+
+    /** Whether edges near the picture's borders are pulled onto them (see
+     *  [toEdge]); the user's to switch off. */
+    var snapToEdges = true
+
     private fun resetSnapEngagement() {
         engagedSnapX = Float.NaN
         engagedSnapY = Float.NaN
@@ -540,6 +560,11 @@ class CropOverlayView @JvmOverloads constructor(
         if (!r.isNaN()) sel.right = r
         if (!t.isNaN()) sel.top = t
         if (!b.isNaN()) sel.bottom = b
+        // And to the picture's own edges, where they are near (see toEdge).
+        sel.left = toEdge(sel.left, imageBounds.left, imageBounds.right)
+        sel.right = toEdge(sel.right, imageBounds.left, imageBounds.right)
+        sel.top = toEdge(sel.top, imageBounds.top, imageBounds.bottom)
+        sel.bottom = toEdge(sel.bottom, imageBounds.top, imageBounds.bottom)
         // (A snap line may lie a little beyond the image; the box may not.)
         sel.set(
             sel.left.coerceIn(imageBounds.left, imageBounds.right),
@@ -580,6 +605,7 @@ class CropOverlayView @JvmOverloads constructor(
     /** The image now maps onto the view differently (new size, new place on
      *  the display). */
     private fun onGeometryChanged() {
+        userMatrix.reset()
         updateMatrix()
         // Nor may a touch in progress bring the old box back if it ends in
         // a cancel.
@@ -598,12 +624,137 @@ class CropOverlayView @JvmOverloads constructor(
         }
     }
 
+    /** Where [rect], in the picture's pixels, lies in this view. */
+    fun mapToView(rect: Rect): RectF = RectF(rect).also { imageMatrix.mapRect(it) }
+
+    // Pinch to zoom: what the user did to the fitted picture, applied on
+    // top of the fit (see updateMatrix), and the pinch under way.
+    private val userMatrix = Matrix()
+    private var pinching = false
+    private var pinchFocusX = 0f
+    private var pinchFocusY = 0f
+    private val scaleDetector = ScaleGestureDetector(
+        context,
+        object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
+                // A second finger makes it a pinch, whatever the first had
+                // begun (as the system's own viewers have it): two fingers
+                // seldom land at once, and the first has often drawn a bit
+                // by the time the second is down. Only a stream a long-press
+                // has claimed is left alone.
+                if (gestureHandled) return false
+                beginPinch()
+                pinchFocusX = detector.focusX
+                pinchFocusY = detector.focusY
+                return true
+            }
+
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                zoomBy(
+                    detector.scaleFactor, detector.focusX, detector.focusY,
+                    detector.focusX - pinchFocusX, detector.focusY - pinchFocusY
+                )
+                pinchFocusX = detector.focusX
+                pinchFocusY = detector.focusY
+                return true
+            }
+        }
+    ).apply {
+        // (A tap and then a drag is a box here, not a zoom.)
+        isQuickScaleEnabled = false
+        isStylusScaleEnabled = false
+    }
+
+    /** Two fingers are down: the picture is theirs to move. */
+    private fun beginPinch() {
+        pinching = true
+        // The first finger was taken for the start of a gesture: a box it
+        // has moved, resized or (circling) dropped is put back as it was,
+        // and what it drew is forgotten.
+        selection = selectionAtDown
+        qrSelectionActive = qrSelectionActiveAtDown
+        mode = Mode.NONE
+        activeCorner = -1
+        resetStroke()
+        resetSnapEngagement()
+        invalidate()
+    }
+
+    /**
+     * Zoom the picture by [factor] about ([focusX], [focusY]) and move it by
+     * ([panX], [panY]), all in this view's pixels; never smaller than it
+     * fits, never past [MAX_ZOOM] times that, and never off the view where
+     * it is larger than the view (centered where it is smaller). A box
+     * drawn on it keeps to the same part of the picture.
+     */
+    fun zoomBy(factor: Float, focusX: Float, focusY: Float, panX: Float = 0f, panY: Float = 0f) {
+        val b = bitmap ?: return
+        if (width == 0 || height == 0) return
+        val inPicture = selection?.let { RectF(it).also(inverseMatrix::mapRect) }
+        userMatrix.postScale(factor, factor, focusX, focusY)
+        userMatrix.postTranslate(panX, panY)
+        clampUserMatrix(b)
+        updateMatrix()
+        inPicture?.let { sel -> selection = RectF(sel).also(imageMatrix::mapRect) }
+        invalidate()
+        onZoomChanged?.invoke()
+    }
+
+    /** Called after [zoomBy] has moved the picture: for whatever is drawn
+     *  over it by [mapToView]. */
+    var onZoomChanged: (() -> Unit)? = null
+
+    private fun clampUserMatrix(b: Bitmap) {
+        val values = FloatArray(9).also(userMatrix::getValues)
+        val scale = values[Matrix.MSCALE_X]
+        when {
+            scale <= 1f -> { userMatrix.reset(); return }
+            scale > MAX_ZOOM -> userMatrix.postScale(MAX_ZOOM / scale, MAX_ZOOM / scale, width / 2f, height / 2f)
+        }
+        val src = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
+        val dst = displayFrame ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val shown = RectF().also {
+            Matrix().apply {
+                setRectToRect(src, dst, Matrix.ScaleToFit.CENTER)
+                postConcat(userMatrix)
+            }.mapRect(it, src)
+        }
+        val dx = when {
+            shown.width() <= dst.width() -> dst.centerX() - shown.centerX()
+            shown.left > dst.left -> dst.left - shown.left
+            shown.right < dst.right -> dst.right - shown.right
+            else -> 0f
+        }
+        val dy = when {
+            shown.height() <= dst.height() -> dst.centerY() - shown.centerY()
+            shown.top > dst.top -> dst.top - shown.top
+            shown.bottom < dst.bottom -> dst.bottom - shown.bottom
+            else -> 0f
+        }
+        userMatrix.postTranslate(dx, dy)
+    }
+
+    /** How far the user has zoomed in (1: as the picture fits). */
+    val zoom: Float get() = FloatArray(9).also(userMatrix::getValues)[Matrix.MSCALE_X]
+
+    /** Where [rect], in this view, lies in the picture's pixels (within it). */
+    fun mapToPicture(rect: RectF): Rect {
+        val mapped = RectF(rect).also { inverseMatrix.mapRect(it) }
+        val b = bitmap ?: return Rect()
+        return Rect(
+            mapped.left.toInt().coerceIn(0, b.width), mapped.top.toInt().coerceIn(0, b.height),
+            mapped.right.toInt().coerceIn(0, b.width), mapped.bottom.toInt().coerceIn(0, b.height)
+        )
+    }
+
     private fun updateMatrix() {
         val b = bitmap ?: return
         if (width == 0 || height == 0) return
         val src = RectF(0f, 0f, b.width.toFloat(), b.height.toFloat())
         val dst = displayFrame ?: RectF(0f, 0f, width.toFloat(), height.toFloat())
         imageMatrix.setRectToRect(src, dst, Matrix.ScaleToFit.CENTER)
+        // And then as the user has zoomed and panned it (see zoomBy).
+        imageMatrix.postConcat(userMatrix)
         imageMatrix.mapRect(imageBounds, src)
         // Only the part of the image this view shows can be touched or
         // selected.
@@ -709,6 +860,18 @@ class CropOverlayView @JvmOverloads constructor(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (bitmap == null) return false
+
+        // Two fingers zoom and pan the picture (a long one above all, shown
+        // small to fit): theirs is the whole stream, from the second finger
+        // down to the last one up, and no box is drawn or moved meanwhile.
+        scaleDetector.onTouchEvent(event)
+        if (pinching) {
+            if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                pinching = false
+                activePointerId = MotionEvent.INVALID_POINTER_ID
+            }
+            return true
+        }
 
         // What this event means for the finger the stream began with.
         var action = event.actionMasked
@@ -1001,8 +1164,8 @@ class CropOverlayView @JvmOverloads constructor(
         // image (they are kept for a threshold's width beyond it); the edge
         // itself must not follow it there — the crop would take in pixels
         // the user was never shown.
-        val x = snapX(xRaw).coerceIn(imageBounds.left, imageBounds.right)
-        val y = snapY(yRaw).coerceIn(imageBounds.top, imageBounds.bottom)
+        val x = toEdge(snapX(xRaw), imageBounds.left, imageBounds.right)
+        val y = toEdge(snapY(yRaw), imageBounds.top, imageBounds.bottom)
         when (activeCorner) {
             0 -> { sel.left = x; sel.top = y }
             1 -> { sel.right = x; sel.top = y }
@@ -1048,6 +1211,7 @@ class CropOverlayView @JvmOverloads constructor(
     )
 
     private companion object {
+        const val MAX_ZOOM = 6f
         const val NO_TAP = -1L
         // Taps closer together than this are one bouncing contact, not two
         // taps (the gesture detector's own lower bound).

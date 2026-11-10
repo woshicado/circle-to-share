@@ -84,6 +84,97 @@ class CropOverlayViewGestureTest {
     // --- Drawing a crop -----------------------------------------------------
 
     @Test
+    fun pinch_zoomsThePicture_andTheBoxKeepsToItsPartOfIt() {
+        // A long picture, as a scrollshot is: shown small to fit.
+        onMain { view.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT * 3, Bitmap.Config.ARGB_8888)) }
+        val before = onMainGet { view.mapToView(Rect(0, 0, WIDTH, 100)) }
+        onMain { view.applyCropRect(Rect(100, 3000, 900, 3600)) }
+        assertEquals(Rect(100, 3000, 900, 3600), cropRect())
+
+        onMain { view.zoomBy(2f, WIDTH / 2f, HEIGHT / 2f) }
+        val after = onMainGet { view.mapToView(Rect(0, 0, WIDTH, 100)) }
+        assertEquals(2f, onMainGet { view.zoom }, 0.01f)
+        assertEquals(before.width() * 2, after.width(), 1f)
+        // The box is the same part of the picture, wherever that is now.
+        assertEquals(Rect(100, 3000, 900, 3600), cropRect())
+
+        // Panned by two fingers: along the picture, but never off the view.
+        onMain { view.zoomBy(1f, WIDTH / 2f, HEIGHT / 2f, panX = 0f, panY = -100000f) }
+        val shown = onMainGet { view.mapToView(Rect(0, 0, WIDTH, HEIGHT * 3)) }
+        assertEquals(HEIGHT.toFloat(), shown.bottom, 1f)
+        assertEquals(Rect(100, 3000, 900, 3600), cropRect())
+
+        // Pinched back to smaller than it fits: as it fits, and no further.
+        onMain { view.zoomBy(0.1f, WIDTH / 2f, HEIGHT / 2f) }
+        assertEquals(1f, onMainGet { view.zoom }, 0.01f)
+        assertEquals(before, onMainGet { view.mapToView(Rect(0, 0, WIDTH, 100)) })
+
+        // A new picture starts as it fits.
+        onMain {
+            view.zoomBy(3f, WIDTH / 2f, HEIGHT / 2f)
+            view.setBitmap(Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888))
+        }
+        assertEquals(1f, onMainGet { view.zoom }, 0.01f)
+    }
+
+    @Test
+    fun twoFingersSpreading_zoomIn_andKeepTheBox() {
+        // Circle mode (the default): a finger down would start a circle and
+        // drop the box; two fingers are a pinch and leave it.
+        onMain { view.applyCropRect(Rect(100, 600, 900, 1300)) }
+        onMain {
+            val t = clock
+            sendFingers(t, MotionEvent.ACTION_DOWN, 0, 1 to (400f to 800f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_DOWN, 1, 1 to (400f to 800f), 2 to (700f to 1300f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (300f to 600f), 2 to (800f to 1500f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (200f to 400f), 2 to (900f to 1700f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (150f to 300f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_UP, 1, 1 to (150f to 300f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_UP, 0, 1 to (150f to 300f))
+            clock += 1000
+        }
+
+        assertTrue(onMainGet { view.zoom } > 1.5f)
+        assertEquals(Rect(100, 600, 900, 1300), cropRect())
+        assertTrue(events.hasSelection)
+    }
+
+    @Test
+    fun aPinchHeldInsideTheBox_isNoLongPress() {
+        // Finger 1 rests inside the box, finger 2 joins and they spread,
+        // for longer than a long-press takes: a zoom, not a copy.
+        onMain { view.applyCropRect(Rect(100, 600, 900, 1300)) }
+        val t = SystemClock.uptimeMillis()
+        onMain {
+            clock = t
+            sendFingers(t, MotionEvent.ACTION_DOWN, 0, 1 to (400f to 900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_DOWN, 1, 1 to (400f to 900f), 2 to (700f to 1400f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (300f to 700f), 2 to (800f to 1600f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (200f to 500f), 2 to (900f to 1800f))
+        }
+        SystemClock.sleep(ViewConfiguration.getLongPressTimeout() + 400L)
+        instrumentation.waitForIdleSync()
+        onMain {
+            clock = SystemClock.uptimeMillis()
+            sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (150f to 400f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_UP, 1, 1 to (150f to 400f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_UP, 0, 1 to (150f to 400f))
+            clock += 1000
+        }
+
+        assertEquals("a pinch is not a long-press", 0, events.longPressInside)
+        assertTrue(onMainGet { view.zoom } > 1.5f)
+        assertRectNear(Rect(100, 600, 900, 1300), cropRect())
+    }
+
+    private fun <T> onMainGet(block: () -> T): T {
+        var out: T? = null
+        onMain { out = block() }
+        @Suppress("UNCHECKED_CAST")
+        return out as T
+    }
+
+    @Test
     fun freeform_strokeBecomesItsBoundingBox() {
         stroke(200f to 600f, 800f to 600f, 800f to 1300f, 200f to 1300f)
 
@@ -437,21 +528,27 @@ class CropOverlayViewGestureTest {
     // --- More than one finger -----------------------------------------------
 
     @Test
-    fun secondFingerDuringADrag_isIgnored() {
-        onMain { view.freeform = false }
+    fun secondFingerDuringADrag_makesItAPinch_andUndoesTheDrag() {
+        // The box from before stays as it was; what the first finger had
+        // begun (moving it) is undone, and the picture zooms.
+        onMain { view.freeform = false; view.applyCropRect(Rect(100, 400, 700, 1200)) }
         onMain {
             val t = clock
-            sendFingers(t, MotionEvent.ACTION_DOWN, 0, 1 to (200f to 600f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (400f to 800f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_DOWN, 1, 1 to (400f to 800f), 2 to (900f to 2000f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (600f to 1000f), 2 to (950f to 2100f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_UP, 1, 1 to (600f to 1000f), 2 to (950f to 2100f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (800f to 1300f))
-            clock += 10; sendFingers(t, MotionEvent.ACTION_UP, 0, 1 to (800f to 1300f))
+            sendFingers(t, MotionEvent.ACTION_DOWN, 0, 1 to (400f to 800f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (450f to 850f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (500f to 900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_DOWN, 1, 1 to (500f to 900f), 2 to (700f to 1300f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (400f to 700f), 2 to (800f to 1500f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (300f to 500f), 2 to (900f to 1700f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (200f to 300f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_POINTER_UP, 1, 1 to (200f to 300f), 2 to (950f to 1900f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_MOVE, 0, 1 to (150f to 250f))
+            clock += 10; sendFingers(t, MotionEvent.ACTION_UP, 0, 1 to (150f to 250f))
             clock += 1000
         }
 
-        assertRectNear(Rect(200, 600, 800, 1300), cropRect())
+        assertTrue(onMainGet { view.zoom } > 1.5f)
+        assertRectNear(Rect(100, 400, 700, 1200), cropRect())
     }
 
     @Test

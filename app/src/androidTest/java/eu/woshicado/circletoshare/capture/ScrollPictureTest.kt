@@ -214,6 +214,23 @@ class ScrollPictureTest {
         )
     }
 
+    @Test
+    fun aWideStripIsDecodedInWindowsAlongItsLength() {
+        // A sideways strip: short and wide. The same places as above, but
+        // along the width.
+        val wide = Bitmap.createBitmap(9000, WIDTH, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(wide)
+        canvas.drawColor(Color.WHITE)
+        val lefts = listOf(100, 2500, 3200, 5900, 8600)
+        for (left in lefts) drawQr(canvas, "at $left", left, QR_LEFT)
+        val found = QrDetector.decode(wide).sortedBy { it.bounds.left }
+        assertEquals(lefts.map { "at $it" }, found.map { it.text })
+        // And each where it was drawn, in the strip's own pixels.
+        for ((left, code) in lefts.zip(found)) {
+            assertTrue("$left: ${code.bounds}", code.bounds.contains(left + QR_SIZE / 2, QR_LEFT + QR_SIZE / 2))
+        }
+    }
+
     private companion object {
         const val WIDTH = 720
         const val FRAME_HEIGHT = 1280

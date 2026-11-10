@@ -92,6 +92,9 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
         setUpStep(
             header.findViewById(R.id.slider_capture_more_step), Prefs.getCaptureMoreStep(this)
         ) { Prefs.setCaptureMoreStep(this, it) }
+        setUpStep(
+            header.findViewById(R.id.slider_capture_more_step_sideways), Prefs.getCaptureMoreStepSideways(this)
+        ) { Prefs.setCaptureMoreStepSideways(this, it) }
         header.findViewById<MaterialSwitch>(R.id.switch_capture_more_handles).apply {
             isChecked = Prefs.isCaptureMoreHandleRemovalEnabled(this@ScrollshotSettingsActivity)
             setOnCheckedChangeListener { _, checked ->
@@ -252,6 +255,7 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
         val override: MaterialSwitch = row.findViewById(R.id.app_switch)
         val options: View = row.findViewById(R.id.app_options)
         val step: Slider = row.findViewById(R.id.app_step)
+        val stepSideways: Slider = row.findViewById(R.id.app_step_sideways)
         val handles: MaterialSwitch = row.findViewById(R.id.app_handles)
         val snap: MaterialSwitch = row.findViewById(R.id.app_snap)
         var packageName: String? = null
@@ -278,11 +282,15 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
             val app = shown[position - 1]
             val context = this@ScrollshotSettingsActivity
             // (A row shown another app before, without being recycled in
-            // between, wants that one's icon no longer.)
-            holder.packageName?.takeIf { it != app.packageName }?.let(::unwantIcon)
-            holder.packageName = app.packageName
+            // between, wants that one's icon no longer; one shown this app
+            // already wants it still, and once.)
+            val another = holder.packageName != app.packageName
+            if (another) {
+                holder.packageName?.let(::unwantIcon)
+                holder.packageName = app.packageName
+            }
             holder.label.text = app.label
-            showIcon(holder, app.packageName)
+            showIcon(holder, app.packageName, want = another)
 
             // (No listener while a recycled row is set to its new app.)
             holder.override.setOnCheckedChangeListener(null)
@@ -322,6 +330,9 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
             setUpStep(holder.step, Prefs.getCaptureMoreStep(context, packageName)) {
                 Prefs.setCaptureMoreStep(context, it, packageName)
             }
+            setUpStep(holder.stepSideways, Prefs.getCaptureMoreStepSideways(context, packageName)) {
+                Prefs.setCaptureMoreStepSideways(context, it, packageName)
+            }
             holder.handles.isChecked = Prefs.isCaptureMoreHandleRemovalEnabled(context, packageName)
             holder.handles.setOnCheckedChangeListener { _, checked ->
                 Prefs.setCaptureMoreHandleRemovalEnabled(context, checked, packageName)
@@ -343,11 +354,11 @@ class ScrollshotSettingsActivity : AppCompatActivity() {
         /** The app's icon: read off the main thread, once at a time per
          *  app, and not at all for a row that has left the screen by the
          *  time its turn comes (a fling passes hundreds). */
-        private fun showIcon(holder: AppHolder, packageName: String) {
+        private fun showIcon(holder: AppHolder, packageName: String, want: Boolean) {
             val known = icons.get(packageName)
             holder.icon.setImageDrawable(known)
             if (known != null || worker.isShutdown) return
-            iconsWanted.merge(packageName, 1, Int::plus)
+            if (want) iconsWanted.merge(packageName, 1, Int::plus)
             if (!iconsLoading.add(packageName)) return
             worker.execute {
                 val icon = if ((iconsWanted[packageName] ?: 0) > 0) {

@@ -122,6 +122,31 @@
                     style="@style/Widget.CircleToShare.HelpButton" />
             </LinearLayout>
 
+            <!-- Only while this app is the assistant and no voice input is
+                 set (see MainActivity.updateStatus): what keeps it the
+                 assistant across restarts, and the way there. -->
+            <LinearLayout
+                android:id="@+id/voice_input_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/voice_input_missing"
+                    android:textSize="14sp" />
+
+                <Button
+                    android:id="@+id/btn_voice_input_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/btn_voice_input_settings" />
+            </LinearLayout>
+
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
@@ -447,10 +472,18 @@
             android:textColor="?android:attr/textColorSecondary" />
 
         <com.google.android.material.materialswitch.MaterialSwitch
-            android:id="@+id/switch_snap"
+            android:id="@+id/switch_snap_edges"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
+            android:text="@string/switch_snap_edges"
+            android:textSize="16sp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/switch_snap"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:text="@string/switch_snap"
             android:textSize="16sp" />
 

@@ -11,12 +11,14 @@ object Prefs {
     private const val NAME = "cts"
     private const val KEY_FREEFORM = "freeform_crop"
     private const val KEY_SNAP = "snap_to_content"
+    private const val KEY_SNAP_EDGES = "snap_to_edges"
     private const val KEY_QR = "qr_detect"
     private const val KEY_QR_COLOR = "qr_color"
     private const val KEY_A11Y_CONSENT = "a11y_consent"
     private const val KEY_CAPTURE_MORE = "capture_more"
     private const val KEY_TRIGGERS_EXPANDED = "triggers_expanded"
     private const val KEY_CAPTURE_MORE_STEP = "capture_more_step"
+    private const val KEY_CAPTURE_MORE_STEP_SIDEWAYS = "capture_more_step_sideways"
     private const val KEY_CAPTURE_MORE_HANDLES = "capture_more_handles"
 
     // The apps with settings of their own (see setAppOverride), and where
@@ -31,6 +33,7 @@ object Prefs {
             ?.takeIf { prefs.getStringSet(KEY_APP_OVERRIDES, null)?.contains(it) == true }
             ?.let { appKey(it, setting) }
     private const val APP_STEP = "step"
+    private const val APP_STEP_SIDEWAYS = "step_sideways"
     private const val APP_HANDLES = "handles"
     private const val APP_SNAP = "snap"
 
@@ -43,6 +46,9 @@ object Prefs {
     const val CAPTURE_MORE_STEP_MAX = 80
     const val CAPTURE_MORE_STEP_STEP = 5
     const val CAPTURE_MORE_STEP_DEFAULT = 50
+    // Sideways, a row is a pager more often than not, and a pager let go of
+    // before its middle slides back to the page it was on: well past it.
+    const val CAPTURE_MORE_STEP_SIDEWAYS_DEFAULT = 70
 
     /** Default QR highlight color (gold). */
     const val QR_COLOR_DEFAULT = "#FFCA28"
@@ -130,11 +136,13 @@ object Prefs {
         if (enabled) {
             if (!apps.add(packageName)) return
             editor.putInt(appKey(packageName, APP_STEP), getCaptureMoreStep(context))
+                .putInt(appKey(packageName, APP_STEP_SIDEWAYS), getCaptureMoreStepSideways(context))
                 .putBoolean(appKey(packageName, APP_HANDLES), isCaptureMoreHandleRemovalEnabled(context))
                 .putBoolean(appKey(packageName, APP_SNAP), isSnapEnabled(context))
         } else {
             apps.remove(packageName)
             editor.remove(appKey(packageName, APP_STEP))
+                .remove(appKey(packageName, APP_STEP_SIDEWAYS))
                 .remove(appKey(packageName, APP_HANDLES))
                 .remove(appKey(packageName, APP_SNAP))
         }
@@ -159,10 +167,18 @@ object Prefs {
      * With [packageName]: for a scrollshot of that app — its own step if it
      * has one (see [setAppOverride]), the general one otherwise.
      */
-    fun getCaptureMoreStep(context: Context, packageName: String? = null): Int {
+    fun getCaptureMoreStep(context: Context, packageName: String? = null): Int =
+        step(context, packageName, KEY_CAPTURE_MORE_STEP, APP_STEP, CAPTURE_MORE_STEP_DEFAULT)
+
+    /** As [getCaptureMoreStep], for a row that scrolls sideways: a share of
+     *  the row's width. */
+    fun getCaptureMoreStepSideways(context: Context, packageName: String? = null): Int =
+        step(context, packageName, KEY_CAPTURE_MORE_STEP_SIDEWAYS, APP_STEP_SIDEWAYS, CAPTURE_MORE_STEP_SIDEWAYS_DEFAULT)
+
+    private fun step(context: Context, packageName: String?, key: String, appSetting: String, default: Int): Int {
         val prefs = context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
-        val general = prefs.getInt(KEY_CAPTURE_MORE_STEP, CAPTURE_MORE_STEP_DEFAULT)
-        val stored = ownKey(prefs, packageName, APP_STEP)?.let { prefs.getInt(it, general) } ?: general
+        val general = prefs.getInt(key, default)
+        val stored = ownKey(prefs, packageName, appSetting)?.let { prefs.getInt(it, general) } ?: general
         val steps = ((stored - CAPTURE_MORE_STEP_MIN).toFloat() / CAPTURE_MORE_STEP_STEP).roundToInt()
         return (CAPTURE_MORE_STEP_MIN + steps * CAPTURE_MORE_STEP_STEP)
             .coerceIn(CAPTURE_MORE_STEP_MIN, CAPTURE_MORE_STEP_MAX)
@@ -172,6 +188,13 @@ object Prefs {
     fun setCaptureMoreStep(context: Context, percent: Int, packageName: String? = null) {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
             .putInt(packageName?.let { appKey(it, APP_STEP) } ?: KEY_CAPTURE_MORE_STEP, percent)
+            .apply()
+    }
+
+    /** [packageName] as for [setSnapEnabled]. */
+    fun setCaptureMoreStepSideways(context: Context, percent: Int, packageName: String? = null) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
+            .putInt(packageName?.let { appKey(it, APP_STEP_SIDEWAYS) } ?: KEY_CAPTURE_MORE_STEP_SIDEWAYS, percent)
             .apply()
     }
 
@@ -194,6 +217,16 @@ object Prefs {
         context.getSharedPreferences(NAME, Context.MODE_PRIVATE).edit()
             .putBoolean(packageName?.let { appKey(it, APP_HANDLES) } ?: KEY_CAPTURE_MORE_HANDLES, enabled)
             .apply()
+    }
+
+    /** True = a crop edge near the picture's border is pulled onto it
+     *  (default): a finger seldom reaches the very edge of the screen. */
+    fun isSnapToEdgesEnabled(context: Context): Boolean =
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE).getBoolean(KEY_SNAP_EDGES, true)
+
+    fun setSnapToEdgesEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SNAP_EDGES, enabled).apply()
     }
 
     /** Whether the settings screen shows its "How to open it" section

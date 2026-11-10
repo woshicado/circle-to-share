@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Describes StubRecognitionService to Android. Without this, the service is
+     left out of Settings' "Voice input" picker — which is where a user of a
+     device without a preinstalled recognizer (GrapheneOS) has to pick this
+     app, or Android forgets it as the assistant at every restart (see
+     MainActivity.updateStatus, voiceInputMissing). -->
+<recognition-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:selectableAsDefault="true" />

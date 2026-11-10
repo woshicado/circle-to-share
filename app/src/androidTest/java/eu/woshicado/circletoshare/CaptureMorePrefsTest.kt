@@ -18,6 +18,8 @@ class CaptureMorePrefsTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
 
     private var stepWas = 0
+    private var sidewaysWas: Int? = null
+    private fun prefs() = context.getSharedPreferences("cts", Context.MODE_PRIVATE)
     private var handlesWere = true
     private var snapWas = false
     private var appsWere: Set<String>? = null
@@ -25,6 +27,7 @@ class CaptureMorePrefsTest {
     @Before
     fun remember() {
         stepWas = Prefs.getCaptureMoreStep(context)
+        sidewaysWas = prefs().takeIf { it.contains("capture_more_step_sideways") }?.getInt("capture_more_step_sideways", 0)
         handlesWere = Prefs.isCaptureMoreHandleRemovalEnabled(context)
         snapWas = Prefs.isSnapEnabled(context)
         // The apps that have settings of their own on this device are out
@@ -42,6 +45,9 @@ class CaptureMorePrefsTest {
             if (appsWere == null) remove("scrollshot_apps") else putStringSet("scrollshot_apps", appsWere)
         }.commit()
         Prefs.setCaptureMoreStep(context, stepWas)
+        prefs().edit().apply {
+            sidewaysWas?.let { putInt("capture_more_step_sideways", it) } ?: remove("capture_more_step_sideways")
+        }.apply()
         Prefs.setCaptureMoreHandleRemovalEnabled(context, handlesWere)
         // (The writes are asynchronous and the test process is killed when
         // the run ends: flush, so what was there is what stays.)
@@ -131,6 +137,19 @@ class CaptureMorePrefsTest {
         assertTrue(Prefs.snapDependsOnApp(context))
         Prefs.setSnapEnabled(context, true)
         assertFalse(Prefs.snapDependsOnApp(context))
+    }
+
+    @Test
+    fun theSidewaysStep_hasItsOwnDefault_andGoesWithAnAppsOwnSettings() {
+        assertEquals(Prefs.CAPTURE_MORE_STEP_SIDEWAYS_DEFAULT, Prefs.getCaptureMoreStepSideways(context))
+        Prefs.setCaptureMoreStepSideways(context, 60)
+        Prefs.setAppOverride(context, APP, true)
+        assertEquals(60, Prefs.getCaptureMoreStepSideways(context, APP))
+        Prefs.setCaptureMoreStepSideways(context, 80, APP)
+        assertEquals(80, Prefs.getCaptureMoreStepSideways(context, APP))
+        assertEquals(60, Prefs.getCaptureMoreStepSideways(context))
+        Prefs.setAppOverride(context, APP, false)
+        assertEquals(60, Prefs.getCaptureMoreStepSideways(context, APP))
     }
 
     private companion object {

@@ -6,13 +6,15 @@ import android.speech.SpeechRecognizer
 
 /**
  * The system requires an assistant to declare a recognition service.
- * This app never does voice recognition, so every request is rejected.
+ * This app never does voice recognition, so every request is rejected —
+ * for good, not "busy, try again": chosen as the voice input (see
+ * res/xml/recognition_service.xml), this is what other apps' requests get.
  */
 class StubRecognitionService : RecognitionService() {
 
     override fun onStartListening(recognizerIntent: Intent?, listener: Callback?) {
         try {
-            listener?.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+            listener?.error(SpeechRecognizer.ERROR_CLIENT)
         } catch (_: Exception) {
         }
     }

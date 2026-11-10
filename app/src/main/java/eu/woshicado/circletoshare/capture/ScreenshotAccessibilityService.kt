@@ -24,6 +24,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.TypedValue
 import android.view.Display
 import android.view.Gravity
@@ -185,6 +186,45 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // hanging forever with the latch held.
         private const val SHADE_WAIT_TIMEOUT_MS = 1200L
 
+        /**
+         * Which scrollshot buttons a run leaves something behind: a run that
+         * has grown one way ([grown]) can only go on that way, and not a way
+         * it has found the end of ([ended]).
+         */
+        internal fun captureMoreChoices(
+            grown: ScrollCapture.Direction?, ended: Set<ScrollCapture.Direction>, sideways: Boolean = false
+        ): Set<CropScreen.More> {
+            val open = if (grown != null) setOf(grown) else ScrollCapture.Direction.entries.toSet()
+            return (open - ended)
+                .map {
+                    when {
+                        sideways -> if (it == ScrollCapture.Direction.UP) CropScreen.More.LEFT else CropScreen.More.RIGHT
+                        else -> if (it == ScrollCapture.Direction.UP) CropScreen.More.ABOVE else CropScreen.More.BELOW
+                    }
+                }
+                .toSet()
+        }
+
+        /**
+         * Whether Android's settings list this service as switched on. Not
+         * the same as its running ([instance]): after an update that changes
+         * what the service may do, Android stops it and will not start it
+         * again until the user switches it off and on, while the setting
+         * still names it — and some devices leave an assistant in the same
+         * state after a restart (see MainActivity's "stale" status).
+         */
+        fun isListedAsEnabled(context: Context): Boolean =
+            Settings.Secure.getString(
+                context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )?.contains(context.packageName) == true
+
+        /** What to tell a user who asks for the service while it is not
+         *  running: to switch it on — or, named in the settings already, to
+         *  switch it off and on again. */
+        fun whyNotRunning(context: Context): Int =
+            if (instance == null && isListedAsEnabled(context)) R.string.error_accessibility_stale
+            else R.string.error_needs_accessibility
+
         fun isBubbleEnabled(context: Context): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getBoolean(KEY_BUBBLE, false)
@@ -254,6 +294,9 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     private var overlayBitmap: Bitmap? = null
     private var bubbleDensityDpi = 0
     private var overlaySnap: SnapBounds? = null
+    // What scrolled sideways when the open overlay's picture was taken (see
+    // sidewaysAreasNow); empty for a picture a run has grown.
+    private var overlayAreas: List<Rect> = emptyList()
 
     // The "Capture more" run the open overlay's picture comes from, if it
     // was asked for — kept while the overlay is up so the next step carries
@@ -264,6 +307,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     // the way it is to go: the run is this service's to do (see
     // adoptCaptureMore).
     private var adoptingCaptureMore: ScrollCapture.Direction? = null
+    private var adoptingArea: Rect? = null
+    private var adoptingSelection: Rect? = null
 
     // Last bubble position (persisted), so it reappears where the user left it.
     private var bubbleX = UNSET
@@ -518,7 +563,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // Only asked for while a "Capture more" step runs (see
         // watchScrolling), and only added up.
         if (event?.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
-            scrollRun?.noteScrolled(event.scrollDeltaY)
+            scrollRun?.noteScrolled(event.scrollDeltaX, event.scrollDeltaY)
             return
         }
         // The power menu opens beneath the crop overlay, where it can be
@@ -1306,7 +1351,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 if (!isScreenUsable()) return@post abandonCapture()
                 if (bitmap != null) {
                     val snap = if (snapEnabledNow()) collectSnapBounds() else null
-                    presentOverlay(bitmap, snap)
+                    presentOverlay(bitmap, snap, areas = sidewaysAreasNow())
                 } else {
                     showNotice(getString(R.string.error_capture_failed))
                     abandonCapture()
@@ -1357,12 +1402,16 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      */
     fun setCapturing(active: Boolean) {
         val adopting = adoptingCaptureMore
+        val adoptingArea = adoptingArea
+        val adoptingSelection = adoptingSelection
         adoptingCaptureMore = null
+        this.adoptingArea = null
+        this.adoptingSelection = null
         if (!active && adopting != null) {
             // The session closed to let the app underneath be scrolled: the
             // tool is still open as far as anyone can tell, and the latch
             // passes to the run.
-            beginAdoptedCaptureMore(adopting)
+            beginAdoptedCaptureMore(adopting, adoptingArea, adoptingSelection)
             return
         }
         capturing = active
@@ -1387,7 +1436,14 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     /** The clean screenshot behind the open bubble crop overlay (no bubble in
      *  it), for the assistant to reuse instead of a system shot that would
      *  include the overlay. Null if no bubble overlay is open. */
-    fun openOverlayScreenshot(): Bitmap? = if (overlayView != null) overlayBitmap else null
+    fun openOverlayScreenshot(): Bitmap? =
+        // (A sideways strip is no picture of the screen: the assistant
+        // starts afresh over it.)
+        if (overlayView != null && scrollRun?.area == null) overlayBitmap else null
+
+    /** Whether the picture [openOverlayScreenshot] gives is a "Capture
+     *  more" picture, longer than the screen. */
+    fun openOverlayIsGrown(): Boolean = overlayView != null && scrollRun?.grown == true
 
     /** The snap bounds that go with [openOverlayScreenshot] — collected when
      *  that screenshot was taken, so they describe what is in the picture
@@ -1396,10 +1452,13 @@ class ScreenshotAccessibilityService : AccessibilityService() {
 
     /** [run]: the "Capture more" run [bitmap] comes from, to carry on with
      *  if more is asked for. */
-    private fun presentOverlay(bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null) {
+    private fun presentOverlay(
+        bitmap: Bitmap, snap: SnapBounds?, run: ScrollCapture? = null, areas: List<Rect> = emptyList()
+    ) {
         ShareHelper.cleanupCache(this)
         teardownOverlay()
         scrollRun = run
+        overlayAreas = areas
         pendingCaptureGen = NO_CAPTURE // it is being presented now
         overlayGen = bubbleCaptureGen
         overlayBitmap = bitmap
@@ -1432,13 +1491,22 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         // Cancel on the back key.
         screen.onBackKey = { dismissOverlay() }
         if (Prefs.isCaptureMoreEnabled(this)) {
-            // A run that has grown one way can only go on that way.
-            screen.captureMoreChoices = when (run?.direction) {
-                ScrollCapture.Direction.UP -> setOf(CropScreen.More.ABOVE)
-                ScrollCapture.Direction.DOWN -> setOf(CropScreen.More.BELOW)
-                null -> setOf(CropScreen.More.ABOVE, CropScreen.More.BELOW)
-            }
+            screen.captureMoreChoices =
+                captureMoreChoices(run?.direction, run?.ended ?: emptySet(), sideways = run?.area != null)
             screen.onCaptureMore = { captureMore(directionOf(it)) }
+            // Sideways is a run of its own, begun from a picture no run has
+            // grown yet (one a step left as it was will do): the "↔" button
+            // has a row chosen, "More left" or "More right" then starts the
+            // run of it.
+            if (run == null || (!run.grown && run.area == null)) {
+                val display = ScrollCapture.displayBounds(this)
+                screen.onCaptureSideways = {
+                    screen.pickArea(areas.map { ScrollCapture.toPicture(it, display, bitmap) })
+                }
+                screen.onSidewaysRun = { chosen, more ->
+                    captureSideways(ScrollCapture.toDisplay(chosen, display, bitmap), directionOf(more), chosen)
+                }
+            }
         }
 
         val frame = overlayFrame()
@@ -1494,7 +1562,7 @@ class ScreenshotAccessibilityService : AccessibilityService() {
                 OnBackInvokedDispatcher.PRIORITY_DEFAULT
             ) { dismissOverlay() }
         }
-        screen.setBitmap(bitmap, snap)
+        screen.setBitmap(bitmap, snap, scrollshot = run != null && (run.grown || run.area != null))
     }
 
     // --- Capture more (experimental) ------------------------------------------
@@ -1515,7 +1583,26 @@ class ScreenshotAccessibilityService : AccessibilityService() {
         dropNotice() // like the overlay, it would be in the picture
         scrollRun = run
         pendingCaptureGen = bubbleCaptureGen
-        runCaptureMoreStep(run, going, bubbleCaptureGen, BUBBLE_HIDE_DELAY_MS)
+        runCaptureMoreStep(run, bubbleCaptureGen, BUBBLE_HIDE_DELAY_MS) { alive, onDone ->
+            run.step(going, alive, onDone)
+        }
+    }
+
+    /**
+     * EXPERIMENTAL. Begin a sideways run of [area] (display pixels), [going]
+     * left or right: the tool goes away, the area is shot as it is and
+     * grown one step, and comes back as the picture.
+     */
+    private fun captureSideways(area: Rect, going: ScrollCapture.Direction, selection: Rect) {
+        if (overlayView == null || overlayGen != bubbleCaptureGen) return
+        val run = ScrollCapture(this, ui, area)
+        detachOverlayView()
+        dropNotice()
+        scrollRun = run
+        pendingCaptureGen = bubbleCaptureGen
+        runCaptureMoreStep(run, bubbleCaptureGen, BUBBLE_HIDE_DELAY_MS, retryWith = selection) { alive, onDone ->
+            run.beginAndStep(going, alive, onDone)
+        }
     }
 
     private var watchingScrolling = false
@@ -1540,8 +1627,8 @@ class ScreenshotAccessibilityService : AccessibilityService() {
     }
 
     private fun directionOf(more: CropScreen.More) = when (more) {
-        CropScreen.More.ABOVE -> ScrollCapture.Direction.UP
-        CropScreen.More.BELOW -> ScrollCapture.Direction.DOWN
+        CropScreen.More.ABOVE, CropScreen.More.LEFT -> ScrollCapture.Direction.UP
+        CropScreen.More.BELOW, CropScreen.More.RIGHT -> ScrollCapture.Direction.DOWN
     }
 
     /**
@@ -1551,51 +1638,105 @@ class ScreenshotAccessibilityService : AccessibilityService() {
      * this, then closes, and the run carries on in this service's overlay,
      * which looks the same. False if this service can't take it.
      */
-    fun adoptCaptureMore(more: CropScreen.More): Boolean {
+    fun adoptCaptureMore(more: CropScreen.More, picture: Bitmap, snap: SnapBounds?, areas: List<Rect>): Boolean {
         if (!consented() || !capturing) return false
         adoptingCaptureMore = directionOf(more)
+        keepForRetry(picture, snap, areas)
         return true
     }
 
-    private fun beginAdoptedCaptureMore(going: ScrollCapture.Direction) {
-        val gen = ++bubbleCaptureGen
-        pendingCaptureGen = gen
-        val run = ScrollCapture(this, ui)
-        scrollRun = run
-        runCaptureMoreStep(
-            run, going, gen, animationSettleMs(this, SESSION_HIDE_BASE_MS, SESSION_HIDE_OFF_MS)
-        )
+    /** As [adoptCaptureMore], for a sideways run of [area] (display pixels)
+     *  the session's user chose, [more] left or right. */
+    fun adoptCaptureSideways(
+        area: Rect, more: CropScreen.More, picture: Bitmap, snap: SnapBounds?, areas: List<Rect>, selection: Rect
+    ): Boolean {
+        if (!consented() || !capturing) return false
+        adoptingArea = area
+        adoptingCaptureMore = directionOf(more)
+        keepForRetry(picture, snap, areas)
+        adoptingSelection = selection
+        return true
     }
 
+    /** The session's picture, kept for a first step that fails or (sideways)
+     *  gets nowhere (see runCaptureMoreStep): the tool then comes back with
+     *  it rather than with nothing. */
+    private fun keepForRetry(picture: Bitmap, snap: SnapBounds?, areas: List<Rect>) {
+        overlayBitmap = picture
+        overlaySnap = snap
+        overlayAreas = areas
+    }
+
+    /**
+     * The parts of the screen that scroll sideways (see
+     * [ScrollCapture.findSidewaysAreas]), looked for now, for the "↔"
+     * button of the tool about to open: while the tool is up the app's
+     * elements are hidden from this service, as the snap bounds' comment
+     * says, so they have to be found before. Empty where the buttons are
+     * off, or the service may not look.
+     */
+    fun sidewaysAreasNow(): List<Rect> =
+        if (consented() && Prefs.isCaptureMoreEnabled(this)) ScrollCapture.findSidewaysAreas(this)
+        else emptyList()
+
+    /** The areas the open overlay was given (see [sidewaysAreasNow]), for a
+     *  session that takes the overlay's picture over. */
+    fun openOverlaySidewaysAreas(): List<Rect> = if (overlayView != null) overlayAreas else emptyList()
+
+    /** [area] and [selection]: a sideways run's, else null. */
+    private fun beginAdoptedCaptureMore(going: ScrollCapture.Direction, area: Rect?, selection: Rect?) {
+        val gen = ++bubbleCaptureGen
+        pendingCaptureGen = gen
+        val run = ScrollCapture(this, ui, area)
+        scrollRun = run
+        val delay = animationSettleMs(this, SESSION_HIDE_BASE_MS, SESSION_HIDE_OFF_MS)
+        runCaptureMoreStep(run, gen, delay, selection.takeIf { area != null }) { alive, onDone ->
+            if (area != null) run.beginAndStep(going, alive, onDone) else run.step(going, alive, onDone)
+        }
+    }
+
+    /**
+     * [retryWith]: a sideways run's first step, begun from that selection
+     * (the picture's pixels): if it gets nowhere, the tool comes back with
+     * the picture it had and that selection, for the user to adjust and try
+     * again, rather than with a strip of one frame.
+     */
     private fun runCaptureMoreStep(
-        run: ScrollCapture, going: ScrollCapture.Direction, gen: Int, delayMs: Long
+        run: ScrollCapture, gen: Int, delayMs: Long, retryWith: Rect? = null,
+        go: (alive: () -> Boolean, onDone: (ScrollCapture.Outcome) -> Unit) -> Unit
     ) {
         val alive = { gen == bubbleCaptureGen && scrollRun === run }
         ui.postDelayed({
             if (!alive()) return@postDelayed
             if (!isScreenUsable()) return@postDelayed abandonCapture()
             watchScrolling(true)
-            run.step(going, alive) { outcome ->
+            go(alive) { outcome ->
                 watchScrolling(false)
-                if (!alive()) return@step
-                if (!isScreenUsable()) return@step abandonCapture()
-                // Not even a first frame: back to the picture the tool was
-                // showing (kept through the step), if it was this service's.
-                val grown = run.bitmap
+                if (!alive()) return@go
+                if (!isScreenUsable()) return@go abandonCapture()
+                val grew = outcome == ScrollCapture.Outcome.EXTENDED || outcome == ScrollCapture.Outcome.UNSURE
+                // Not even a first frame — or a first sideways step that
+                // got nowhere: back to the picture the tool was showing
+                // (kept through the step), if it was this service's.
+                val grown = run.bitmap?.takeIf { retryWith == null || grew }
                 val bitmap = grown ?: overlayBitmap
                 if (bitmap == null) {
                     showNotice(getString(R.string.error_capture_failed))
-                    return@step abandonCapture()
+                    return@go abandonCapture()
                 }
                 if (grown != null) {
-                    presentOverlay(grown, run.snapBounds(), run)
+                    // (A run still of one frame is a picture of the screen,
+                    // with the "↔" button as the one before it had.)
+                    presentOverlay(grown, run.snapBounds(), run, if (run.grown) emptyList() else overlayAreas)
                 } else {
-                    presentOverlay(bitmap, overlaySnap, null)
+                    presentOverlay(bitmap, overlaySnap, null, overlayAreas)
+                    if (retryWith != null) overlayView?.applyCropRect(retryWith)
                 }
                 when (outcome) {
                     ScrollCapture.Outcome.EXTENDED -> Unit
                     ScrollCapture.Outcome.UNSURE -> showNotice(getString(R.string.capture_more_unsure))
                     ScrollCapture.Outcome.END -> showNotice(getString(R.string.capture_more_end))
+                    ScrollCapture.Outcome.STILL -> showNotice(getString(R.string.capture_more_still))
                     ScrollCapture.Outcome.BLOCKED -> showNotice(getString(R.string.capture_more_blocked))
                     ScrollCapture.Outcome.TOO_LONG -> showNotice(getString(R.string.capture_more_too_long))
                     ScrollCapture.Outcome.FAILED -> showNotice(getString(R.string.error_capture_failed))

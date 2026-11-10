@@ -71,30 +71,42 @@ object QrDetector {
      * The codes in [bitmap], on the calling thread.
      *
      * A screenshot is decoded in one go. A long picture ("Capture more":
-     * many screens joined into one) is too much to copy out at once — every
-     * pixel becomes an int on the heap — so it is gone through in windows
-     * of a few thousand rows, each overlapping the last by the picture's
-     * width: a code is square and no wider than the picture, so whichever
-     * window boundary it lies across, it lies whole in one of the two.
+     * many screens joined into one, or a sideways strip, many screens
+     * wide) is too much to copy out at once — every pixel becomes an int
+     * on the heap — so it is gone through along its length in windows of a
+     * few thousand rows (or columns), each overlapping the last by the
+     * picture's breadth: a code is square and no wider than the picture,
+     * so whichever window boundary it lies across, it lies whole in one of
+     * the two.
      */
     internal fun decode(bitmap: Bitmap, cancelled: () -> Boolean = { false }): List<QrCode> {
         val width = bitmap.width
         val height = bitmap.height
-        val window = if (height <= MAX_ROWS_AT_ONCE) height else max(2 * width, MAX_ROWS_AT_ONCE - width)
+        val tall = height >= width
+        val length = if (tall) height else width
+        val breadth = if (tall) width else height
+        val window = if (length <= MAX_ROWS_AT_ONCE) length else max(2 * breadth, MAX_ROWS_AT_ONCE - breadth)
         val found = ArrayList<QrCode>()
-        var top = 0
+        var at = 0
         while (!cancelled()) {
-            val rows = min(window, height - top)
-            val pixels = IntArray(width * rows)
-            bitmap.getPixels(pixels, 0, width, 0, top, width, rows)
-            val source = RGBLuminanceSource(width, rows, pixels)
-            decodePass(source, width, rows, top, found)
+            val n = min(window, length - at)
+            val pixels = IntArray(breadth * n)
+            val source = if (tall) {
+                bitmap.getPixels(pixels, 0, width, 0, at, width, n)
+                RGBLuminanceSource(width, n, pixels)
+            } else {
+                bitmap.getPixels(pixels, 0, n, at, 0, n, height)
+                RGBLuminanceSource(n, height, pixels)
+            }
+            val left = if (tall) 0 else at
+            val top = if (tall) at else 0
+            decodePass(source, left, top, found)
             if (cancelled()) break
             // Dark-mode QR codes are light-on-dark, which ZXing won't read
             // directly; a second pass on inverted luminance catches them.
-            decodePass(source.invert(), width, rows, top, found)
-            if (top + rows >= height) break
-            top += window - width
+            decodePass(source.invert(), left, top, found)
+            if (at + n >= length) break
+            at += window - breadth
         }
         return found
     }
@@ -102,11 +114,11 @@ object QrDetector {
     // The tallest picture decoded in one piece: more than any one screen.
     private const val MAX_ROWS_AT_ONCE = 4096
 
-    /** [top]: the row of the whole picture that row 0 of [source] is. */
+    /** [left], [top]: where pixel (0, 0) of [source] is in the whole
+     *  picture. */
     private fun decodePass(
         source: LuminanceSource,
-        width: Int,
-        height: Int,
+        left: Int,
         top: Int,
         out: MutableList<QrCode>
     ) {
@@ -123,7 +135,7 @@ object QrDetector {
         }
         for (result in results) {
             val text = result.text ?: continue
-            val bounds = boundsOf(result, width, height)?.apply { offset(0, top) } ?: continue
+            val bounds = boundsOf(result, source.width, source.height)?.apply { offset(left, top) } ?: continue
             // The same code found by both passes, in two windows of a long
             // picture, or twice in one collapses:
             // its two boxes share a center. Two on-screen copies of one

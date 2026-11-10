@@ -2,6 +2,7 @@ package eu.woshicado.circletoshare.capture
 
 import eu.woshicado.circletoshare.capture.ScrollStitcher.Verdict
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Random
@@ -83,6 +84,45 @@ class ScrollStitcherTest {
         val m = ScrollStitcher.match(s.at(1000), s.at(2200), expected = 800)
         assertEquals(Verdict.MOVED, m.verdict)
         assertEquals(1200, m.offset)
+    }
+
+    @Test
+    fun aPagerThatSnappedAWholePageIsPlacedWhereItSaysItWent() {
+        val s = screen()
+        // Asked for 700, the pager went a whole page — far beyond what a
+        // list that ran on would — and said so.
+        val m = ScrollStitcher.match(s.at(1000), s.at(2900), expected = 700, reported = 1900)
+        assertEquals(Verdict.MOVED, m.verdict)
+        assertEquals(1900, m.offset)
+        // An account that leaves nothing to compare is not believed.
+        val too = ScrollStitcher.match(s.at(1000), s.at(2900), expected = 700, reported = 2300)
+        assertNotEquals(1900, too.offset)
+    }
+
+    @Test
+    fun aWholePageAskedForAndNothingRecognised_isAppendedWhole() {
+        // Two pages that share nothing (a gallery turned a page), and a
+        // join asked to go by a whole page: on after the other, not a few
+        // rows short of it.
+        val a = screen(noise(6000, 11))
+        val b = screen(noise(6000, 12))
+        val h = HEIGHT - 120 - 90
+        val m = ScrollStitcher.match(a.at(1000), b.at(1000), expected = HEIGHT)
+        assertEquals(Verdict.UNSURE, m.verdict)
+        assertEquals(h, m.offset)
+    }
+
+    @Test
+    fun aPagerThatSaysItTurnedAWholePage_isPlacedThere_whenNothingIsRecognised() {
+        // A gallery: dragged 70% of the way, it snapped to the next image —
+        // nothing in common with the last — and said it went (almost) the
+        // whole way. Placed where it says, not where it was dragged to.
+        val a = screen(noise(6000, 11))
+        val b = screen(noise(6000, 12))
+        val h = HEIGHT - 120 - 90
+        val m = ScrollStitcher.match(a.at(1000), b.at(1000), expected = h * 7 / 10, reported = h - 3)
+        assertEquals(Verdict.UNSURE, m.verdict)
+        assertEquals(h - 3, m.offset)
     }
 
     @Test

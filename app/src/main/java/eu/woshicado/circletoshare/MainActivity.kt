@@ -11,6 +11,7 @@ import android.database.ContentObserver
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.graphics.drawable.GradientDrawable
 import android.provider.Settings
 import android.text.Editable
@@ -173,6 +174,11 @@ class MainActivity : AppCompatActivity() {
                 Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
             )
         }
+        // (There is no way into the "Voice input" picker itself; it is two
+        // taps from here: Speech, then Voice input.)
+        findViewById<Button>(R.id.btn_voice_input_settings).setOnClickListener {
+            openFirstAvailable(Intent(Settings.ACTION_LOCALE_SETTINGS))
+        }
         findViewById<Button>(R.id.btn_accessibility_settings).setOnClickListener {
             if (Prefs.hasAccessibilityConsent(this)) {
                 openAccessibilitySettings()
@@ -226,7 +232,7 @@ class MainActivity : AppCompatActivity() {
                 // them back here.
                 if (!fallbackUsable()) {
                     Toast.makeText(
-                        this, R.string.error_needs_accessibility, Toast.LENGTH_LONG
+                        this, ScreenshotAccessibilityService.whyNotRunning(this), Toast.LENGTH_LONG
                     ).show()
                 } else {
                     requestAddTile()
@@ -277,6 +283,11 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_freeform).setOnCheckedChangeListener { _, checked ->
             if (syncingSwitches) return@setOnCheckedChangeListener
             Prefs.setFreeformCrop(this, checked)
+        }
+
+        findViewById<MaterialSwitch>(R.id.switch_snap_edges).setOnCheckedChangeListener { _, checked ->
+            if (syncingSwitches) return@setOnCheckedChangeListener
+            Prefs.setSnapToEdgesEnabled(this, checked)
         }
 
         findViewById<MaterialSwitch>(R.id.switch_snap).setOnCheckedChangeListener { view, checked ->
@@ -476,22 +487,36 @@ class MainActivity : AppCompatActivity() {
         val isAssistant = roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true ||
             Settings.Secure.getString(contentResolver, VOICE_INTERACTION_SERVICE)
                 ?.contains(packageName) == true
+        val fallbackEnabled = ScreenshotAccessibilityService.isListedAsEnabled(this)
+        // Android 17 picks a voice input by itself only from the system's
+        // own apps. With none set — on a system that has none, GrapheneOS —
+        // it drops a third-party assistant at every restart (the role, which
+        // Settings shows, stays): the user has to choose one.
+        val voiceInputMissing = isAssistant &&
+            Settings.Secure.getString(contentResolver, VOICE_RECOGNITION_SERVICE).isNullOrEmpty()
 
-        val enabledServices = Settings.Secure.getString(
-            contentResolver,
-            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-        ) ?: ""
-        val fallbackEnabled = enabledServices.contains(packageName)
-
-        showStatus(
-            R.id.status_assistant, isAssistant,
-            R.string.status_assistant_on, R.string.status_assistant_off
+        // Named in the settings, and yet not running: what Android leaves
+        // behind after an update that changes what the accessibility service
+        // may do (it stops the service for good until the user switches it
+        // off and on), and what some devices make of the assistant after a
+        // restart. Nothing here can mend it; the user can, once told. Only
+        // once it has lasted a moment, though: a service just switched on is
+        // bound while this screen comes back.
+        val now = SystemClock.uptimeMillis()
+        val (assistantStale, assistantSince) = staleAfterGrace(
+            isAssistant && AssistInteractionService.instance == null, assistantStaleSince, now
         )
-        showStatus(
-            R.id.status_accessibility, fallbackEnabled,
-            R.string.status_fallback_on, R.string.status_fallback_off
+        val (fallbackStale, fallbackSince) = staleAfterGrace(
+            fallbackEnabled && ScreenshotAccessibilityService.instance == null, fallbackStaleSince, now
         )
-        renderSetup(isAssistant, fallbackEnabled)
+        // (Each on its own clock: one long stale must not make the other,
+        // just switched on, stale before its moment is up.)
+        if ((assistantSince != 0L && !assistantStale) || (fallbackSince != 0L && !fallbackStale)) {
+            window.decorView.postDelayed({ if (!isDestroyed) updateStatus() }, STALE_GRACE_MS + 100)
+        }
+        assistantStaleSince = assistantSince
+        fallbackStaleSince = fallbackSince
+        showSetupStatus(isAssistant, assistantStale, fallbackEnabled, fallbackStale, voiceInputMissing)
 
         if (!fallbackEnabled) {
             disclosureOffered = false
@@ -515,6 +540,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_freeform).isChecked =
             Prefs.isFreeformCrop(this)
 
+        findViewById<MaterialSwitch>(R.id.switch_snap_edges).isChecked = Prefs.isSnapToEdgesEnabled(this)
         findViewById<MaterialSwitch>(R.id.switch_snap).isChecked =
             Prefs.isSnapEnabled(this)
 
@@ -525,6 +551,33 @@ class MainActivity : AppCompatActivity() {
         findViewById<MaterialSwitch>(R.id.switch_qr).isChecked = qr
         setQrColorRowVisible(qr)
         syncingSwitches = false
+    }
+
+    /** The two setup steps' status lines, and the section's header after
+     *  them: done, not done — or set and yet not running (see updateStatus),
+     *  which is not done either, and says what to do. */
+    internal fun showSetupStatus(
+        isAssistant: Boolean, assistantStale: Boolean, fallbackEnabled: Boolean, fallbackStale: Boolean,
+        voiceInputMissing: Boolean = false
+    ) {
+        val assistantDone = isAssistant && !assistantStale && !voiceInputMissing
+        showStatus(
+            R.id.status_assistant, assistantDone,
+            R.string.status_assistant_on,
+            when {
+                assistantStale -> R.string.status_assistant_stale
+                voiceInputMissing -> R.string.status_assistant_no_voice_input
+                else -> R.string.status_assistant_off
+            }
+        )
+        findViewById<View>(R.id.voice_input_group).visibility =
+            if (voiceInputMissing) View.VISIBLE else View.GONE
+        showStatus(
+            R.id.status_accessibility, fallbackEnabled && !fallbackStale,
+            R.string.status_fallback_on,
+            if (fallbackStale) R.string.status_fallback_stale else R.string.status_fallback_off
+        )
+        renderSetup(assistantDone, fallbackEnabled && !fallbackStale)
     }
 
     /**
@@ -580,7 +633,7 @@ class MainActivity : AppCompatActivity() {
     private fun refusedWithoutFallback(switch: CompoundButton): Boolean {
         if (fallbackUsable()) return false
         switch.isChecked = false
-        Toast.makeText(this, R.string.error_needs_accessibility, Toast.LENGTH_LONG).show()
+        Toast.makeText(this, ScreenshotAccessibilityService.whyNotRunning(this), Toast.LENGTH_LONG).show()
         return true
     }
 
@@ -720,10 +773,31 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.error_no_settings, Toast.LENGTH_SHORT).show()
     }
 
-    private companion object {
+    // When the assistant, and the service, was first seen named but not
+    // running (see updateStatus); 0 while it is not.
+    private var assistantStaleSince = 0L
+    private var fallbackStaleSince = 0L
+
+    companion object {
+        /**
+         * Whether a service seen named-but-not-running counts as stale (see
+         * updateStatus): only once that has lasted [STALE_GRACE_MS], from
+         * [since] (0: not before). Returns the verdict and the new [since].
+         */
+        internal fun staleAfterGrace(looksStale: Boolean, since: Long, now: Long): Pair<Boolean, Long> {
+            if (!looksStale) return false to 0L
+            val from = if (since == 0L) now else since
+            return (now - from >= STALE_GRACE_MS) to from
+        }
+
+        internal const val STALE_GRACE_MS = 1500L
+
         // Settings.Secure.VOICE_INTERACTION_SERVICE: readable, but hidden
         // from the SDK.
-        const val VOICE_INTERACTION_SERVICE = "voice_interaction_service"
+        private const val VOICE_INTERACTION_SERVICE = "voice_interaction_service"
+
+        // Settings.Secure.VOICE_RECOGNITION_SERVICE, likewise.
+        private const val VOICE_RECOGNITION_SERVICE = "voice_recognition_service"
 
         const val STATE_DISCLOSURE_OFFERED = "disclosure_offered"
         const val STATE_SETUP_OPENED = "setup_opened_by_hand"
@@ -731,6 +805,7 @@ class MainActivity : AppCompatActivity() {
 
         val WATCHED_SETTINGS = listOf(
             VOICE_INTERACTION_SERVICE,
+            VOICE_RECOGNITION_SERVICE,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         )
     }
