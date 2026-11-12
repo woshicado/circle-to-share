@@ -169,6 +169,20 @@
     <string name="about_title">About</string>
     <string name="btn_privacy">Privacy policy</string>
     <string name="btn_imprint">Imprint</string>
+    <string name="btn_licenses">Licenses</string>
+    <string name="licenses_title">Licenses</string>
+    <string name="licenses_row_summary">This app\'s license and the components it is built with</string>
+    <string name="licenses_app_title">Circle to Share: License</string>
+    <string name="licenses_note">Circle to Share is free software: you can share and change it under the GNU General Public License, version 3 or later. It comes with no warranty. It is built with the components below, used under their own licenses.</string>
+    <string name="btn_source_code">Source code</string>
+    <string name="licenses_text">License text</string>
+    <string name="licenses_read">Read the license</string>
+    <string name="licenses_sdk_note">Not open source. Only in the Google Play version, for in-app tips.</string>
+    <string name="licenses_bundled_title">Inside Google\'s libraries</string>
+    <string name="licenses_bundled_note">Google\'s Play libraries include these components. Their notices, as Google provides them:</string>
+    <string name="licenses_copyright">© %1$s</string>
+    <string name="url_source" translatable="false">https://github.com/woshicado/circle-to-share</string>
+    <string name="url_android_sdk_license" translatable="false">https://developer.android.com/studio/terms</string>
     <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary donation. It unlocks nothing.</string>
     <string name="btn_support">Buy me a coffee!</string>
     <string name="btn_feedback">Send feedback</string>

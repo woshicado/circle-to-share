@@ -129,4 +129,7 @@ under the terms of the GNU General Public License as published by the Free
 Software Foundation, either version 3 of the License, or (at your option)
 any later version. See [LICENSE](LICENSE).
 
+Built with open-source components under their own licenses;
+see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 <sub>Google Play and the Google Play logo are trademarks of Google LLC.</sub>

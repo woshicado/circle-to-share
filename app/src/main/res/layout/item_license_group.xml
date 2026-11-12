@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The start of a license's section on the licenses page: a rule, as
+     between the main screen's sections, and the license's heading (its
+     text and icon set in LicensesActivity). -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="24dp"
+        android:background="?android:attr/listDivider" />
+
+    <TextView
+        style="@style/Widget.CircleToShare.SectionHeading"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="2dp" />
+</merge>

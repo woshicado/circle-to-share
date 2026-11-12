@@ -1,5 +1,7 @@
 import java.io.FileInputStream
 import java.util.Properties
+import java.util.SortedSet
+import java.util.zip.ZipFile
 
 plugins {
     id("com.android.application")
@@ -32,8 +34,8 @@ android {
         applicationId = "eu.woshicado.circletoshare"
         minSdk = 30
         targetSdk = 36
-        versionCode = 15
-        versionName = "0.3.6"
+        versionCode = 16
+        versionName = "0.3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -100,6 +102,63 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+}
+
+/**
+ * The open-source notices Google's Play libraries carry for code compiled
+ * into them (third_party_licenses.json/.txt in each AAR, which the build
+ * does not package), gathered into one asset for the licenses page: each
+ * name once, with its texts, and each text once, however many libraries
+ * share it (compared with whitespace evened out). Play build only: the foss
+ * build has no such libraries.
+ */
+abstract class GooglePlayNoticesTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val aars: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun gather() {
+        val texts = LinkedHashMap<String, Int>() // evened-out text -> index
+        val shown = ArrayList<String>()
+        // Name -> its texts (some names, e.g. Kotlin, come with several).
+        val notices = sortedMapOf<String, SortedSet<Int>>(compareBy({ it.lowercase() }, { it }))
+        aars.files.sortedBy { it.name }.forEach { aar ->
+            ZipFile(aar).use { zip ->
+                val index = zip.getEntry("third_party_licenses.json") ?: return@use
+                val bytes = zip.getInputStream(zip.getEntry("third_party_licenses.txt")).use { it.readBytes() }
+                @Suppress("UNCHECKED_CAST")
+                val entries = groovy.json.JsonSlurper().parse(zip.getInputStream(index)) as Map<String, Map<String, Int>>
+                entries.forEach { (name, at) ->
+                    val text = String(bytes, at.getValue("start"), at.getValue("length"), Charsets.UTF_8).trim()
+                    val i = texts.getOrPut(text.replace(Regex("\\s+"), " ")) { shown.add(text); shown.size - 1 }
+                    notices.getOrPut(name) { sortedSetOf() }.add(i)
+                }
+            }
+        }
+        val json = groovy.json.JsonOutput.toJson(
+            mapOf("texts" to shown, "notices" to notices.map { (name, texts) -> listOf(name, texts.toList()) })
+        )
+        outputDir.get().file("google_play_notices.json").asFile.writeText(json)
+    }
+}
+
+if (playBuild) {
+    androidComponents {
+        onVariants { variant ->
+            val gather = tasks.register<GooglePlayNoticesTask>("${variant.name}GooglePlayNotices") {
+                aars.from(
+                    variant.runtimeConfiguration.incoming.artifactView {
+                        attributes { attribute(Attribute.of("artifactType", String::class.java), "aar") }
+                    }.files
+                )
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(gather, GooglePlayNoticesTask::outputDir)
+        }
     }
 }
 

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A plain chevron on the grid the other icons use; tinted where it is used. -->
+<!-- Material Symbols "chevron_right" (Apache License 2.0), on the grid the other
+     icons use; tinted where it is used. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp"
     android:height="24dp"

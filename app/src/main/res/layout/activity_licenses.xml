@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The open-source licenses page, opened from the main screen's About
+     section: the app's own license, then the components it is built with,
+     a section per license (see LicensesActivity, which fills
+     licenses_groups). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/licenses_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp">
+
+        <ImageButton
+            android:id="@+id/btn_back"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="-12dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/action_back"
+            android:rotation="180"
+            android:src="@drawable/ic_chevron_right"
+            app:tint="?attr/colorOnSurface" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/licenses_title"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- (An id, for its scroll position to outlive a rotation.) -->
+    <ScrollView
+        android:id="@+id/licenses_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingBottom="32dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/Widget.CircleToShare.SectionHeading"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:drawableStart="@drawable/ic_section_license"
+                android:text="@string/licenses_app_title" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/licenses_note"
+                android:textSize="14sp" />
+
+            <!-- Leaves the app: its icon says so. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_source_code"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/btn_source_code"
+                app:icon="@drawable/ic_open_in_new"
+                app:iconGravity="textEnd"
+                app:iconSize="18dp" />
+
+            <include
+                android:id="@+id/app_license_text"
+                layout="@layout/item_license_text" />
+
+            <!-- Each license the components are used under: a rule, its
+                 heading, its components (item_license.xml), and its text
+                 (item_license_text.xml) or a link to it. -->
+            <LinearLayout
+                android:id="@+id/licenses_groups"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

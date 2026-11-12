@@ -324,6 +324,12 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btn_feedback).setOnClickListener { composeFeedback() }
         findViewById<Button>(R.id.btn_privacy).setOnClickListener { openUrl(R.string.url_privacy) }
         findViewById<Button>(R.id.btn_imprint).setOnClickListener { openUrl(R.string.url_imprint) }
+        findViewById<View>(R.id.btn_licenses).apply {
+            readAsButton()
+            setOnClickListener {
+                startActivity(Intent(this@MainActivity, LicensesActivity::class.java))
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

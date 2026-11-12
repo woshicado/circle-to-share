@@ -62,6 +62,11 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Licenses, opened from MainActivity's About section. -->
+        <activity
+            android:name=".LicensesActivity"
+            android:exported="false" />
+
         <!-- Digital assistant entry point: launched when the user invokes the assistant. -->
         <service
             android:name=".assist.AssistInteractionService"

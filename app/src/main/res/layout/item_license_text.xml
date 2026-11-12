@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A license's full text on the licenses page, folded under a header that
+     opens it (see LicensesActivity.fold). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/license_text_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:minHeight="48dp"
+        android:orientation="horizontal">
+
+        <!-- "License text" under a license's heading; for a notice from
+             Google's libraries, the component's name. -->
+        <TextView
+            android:id="@+id/license_text_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:drawablePadding="10dp"
+            android:gravity="center_vertical"
+            android:text="@string/licenses_text"
+            app:drawableStartCompat="@drawable/ic_license_text"
+            app:drawableTint="?attr/colorPrimary"
+            android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp" />
+
+        <ImageView
+            android:id="@+id/license_text_chevron"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_expand_more"
+            app:tint="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/license_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textIsSelectable="true"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>

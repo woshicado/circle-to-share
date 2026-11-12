@@ -1,0 +1,1 @@
+* Add "Licenses" page with the app's own license (GPL-3.0), and the components' licenses it is built with
