@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">الدائرة للمشاركة</string>
+
+    <string name="setup_intro">التقط الشاشة من أي مكان، واقتصّ ما تريد، ثم شاركه. لا يُحفظ شيء على جهازك، فلا شيء يحتاج إلى حذفه.</string>
+
+    <string name="setup_step1_title">1. تعيينه مساعدًا (اختياري)</string>
+    <string name="setup_step1_body">اختر «الدائرة للمشاركة» كتطبيق المساعد الرقمي (المساعد الرقمي التلقائي > الدائرة للمشاركة). يتيح ذلك لإيماءة المساعد فتح طبقة الاقتصاص (مثل الضغط مطولًا على زر التشغيل أو السحب للأعلى من إحدى الزاويتين السفليتين). إذا ظهر مفتاح «استخدام بيانات الشاشة»، فعِّله.</string>
+    <string name="status_assistant_on">✓ المساعد مفعّل</string>
+    <string name="status_assistant_off">✗ لم يُعيّن مساعدًا بعد</string>
+    <string name="status_assistant_stale">✗ عُيّن مساعدًا، لكنه لا يعمل. قد يحدث هذا أحيانًا بعد إعادة التشغيل أو التحديث: اختر مساعدًا آخر، ثم اختر «الدائرة للمشاركة» مجددًا.</string>
+    <string name="status_assistant_no_voice_input">✗ المساعد مفعّل حتى إعادة التشغيل التالية فقط</string>
+    <string name="voice_input_missing">لم يتم تعيين إدخال صوتي، لذا ينسى Android «الدائرة للمشاركة» كمساعد عند كل إعادة تشغيل للجهاز (في GrapheneOS وأنظمة أخرى لا تتضمن إدخالًا صوتيًا). افتح إعدادات اللغة، ثم «تحويل النص إلى كلام» > «إدخال صوتي»، واختر «الدائرة للمشاركة» أو أي خيار آخر؛ المهم ألا يكون الحقل فارغًا.</string>
+    <string name="btn_voice_input_settings">فتح إعدادات اللغة</string>
+    <string name="btn_assistant_settings">فتح إعدادات المساعد</string>
+
+    <string name="setup_step2_title">2. تفعيل طريقة الالتقاط البديلة (موصى به)</string>
+    <string name="setup_step2_body">إذا لم يمرّر جهازك لقطات الشاشة إلى تطبيقات المساعد التابعة لجهات خارجية، فستلتقط خدمة تسهيل الاستخدام الشاشة بدلًا من ذلك. ضمن «تسهيل الاستخدام» > «الدائرة للمشاركة»، فعِّل المفتاح الرئيسي «استخدام». يتيح ذلك أيضًا استخدام بلاطة الإعدادات السريعة والزر العائم، وكلاهما ضمن «طرق فتح التطبيق».</string>
+    <string name="status_fallback_on">✓ طريقة الالتقاط البديلة مفعّلة</string>
+    <string name="status_fallback_off">✗ طريقة الالتقاط البديلة غير مفعّلة</string>
+    <string name="status_fallback_stale">✗ فُعّلت، لكنها لا تعمل. يوقف Android الخدمة بعد تحديث يغيّر ما يُسمح لها بفعله: أوقفها ثم فعّلها مجددًا ضمن «تسهيل الاستخدام».</string>
+    <string name="btn_accessibility_settings">فتح إعدادات تسهيل الاستخدام</string>
+
+    <!-- The "?" beside a setup step and the card it opens. %1$s: one of the help_title_* below. -->
+    <string name="help_button_description">طريقة الإعداد: %1$s</string>
+    <string name="help_title_assistant">التعيين كمساعد</string>
+    <string name="help_steps_assistant">انقر على «فتح إعدادات المساعد»، ثم «المساعد الرقمي التلقائي». اختر «الدائرة للمشاركة». إذا ظهر خيار «استخدام بيانات الشاشة» أو «استخدام لقطة الشاشة»، فعِّله.</string>
+    <string name="help_title_fallback">تفعيل طريقة الالتقاط البديلة</string>
+    <string name="help_steps_fallback">انقر على «فتح إعدادات تسهيل الاستخدام» ووافق على الإذن. افتح «الدائرة للمشاركة» (ضمن «التطبيقات التي تم تنزيلها»)، وفعّل «استخدام الدائرة للمشاركة»، ثم انقر على «سماح». هل المفتاح رمادي («إعداد مقيّد»)? افتح معلومات التطبيق لـ«الدائرة للمشاركة»، وانقر على ⋮ في الأعلى، واختر «السماح بالإعدادات المقيّدة»، ثم حاول مجددًا.</string>
+    <string name="help_title_tile">إضافة بلاطة الإعدادات السريعة</string>
+    <string name="help_steps_tile">يلزم تفعيل طريقة الالتقاط البديلة (الخطوة 2). بعد ذلك، انقر على «إضافة بلاطة الإعدادات السريعة» إن ظهرت، أو أضف البلاطة يدويًا: اسحب لوحة الإشعارات للأسفل مرتين، وانقر على زر التعديل (القلم)، واعثر على «الدائرة للمشاركة»، ثم اسحبها إلى قائمة البلاطات.</string>
+    <string name="help_varies_note">قد تختلف القوائم على هاتفك.</string>
+
+    <string name="setup_step3_title">3. جرّبه</string>
+    <string name="setup_step3_body">شغّل المساعد (بالضغط مطولًا على زر التشغيل أو بالسحب للأعلى من إحدى الزاويتين السفليتين)، ثم ارسم دائرة حول ما تريد، واضغط «مشاركة». <b>تلميح:</b> يلتقط زر الاختبار أدناه صورة لهذه الشاشة.</string>
+    <string name="btn_test">اختبار الالتقاط</string>
+
+    <string name="triggers_title">طرق فتح التطبيق</string>
+    <string name="triggers_intro">طرق بدء الالتقاط:</string>
+    <string name="trigger_power">• زر التشغيل (باستخدام المساعد): اضغط عليه مطولًا. إذا ظهرت قائمة الطاقة بدلًا من ذلك، فاضبط الخيار ضمن النظام > الإيماءات > الضغط مطولًا على زر التشغيل > المساعد الرقمي.</string>
+    <string name="trigger_corner">• السحب من الزاوية (باستخدام المساعد): اسحب للأعلى من إحدى الزاويتين السفليتين. هذه طريقة أخرى لتشغيل المساعد، إذا كانت مفعّلة في إعدادات النظام.</string>
+    <string name="trigger_tile">• بلاطة الإعدادات السريعة: يؤدي النقر عليها إلى إغلاق اللوحة والتقاط الشاشة التي خلفها. لإضافتها، اسحب لوحة الإعدادات للأسفل، وانقر على زر التعديل، ثم اسحب بلاطة «الدائرة للمشاركة» إلى قائمة البلاطات. <i>يتطلب ذلك تفعيل طريقة الالتقاط البديلة (الخطوة 2).</i></string>
+    <string name="trigger_bubble">• الزر العائم (أدناه): فقاعة عائمة خاصة بالتطبيق، يمكنك النقر عليها وسحبها. <i>يتطلب ذلك تفعيل طريقة الالتقاط البديلة (الخطوة 2).</i></string>
+    <string name="help_title_trigger_power">الضغط مطولًا على زر التشغيل</string>
+    <string name="help_steps_trigger_power">اضغط مطولًا على زر التشغيل لمدة ثانية تقريبًا لفتح أداة الاقتصاص. يتطلب ذلك تفعيل الخطوة 1. إذا ظهرت قائمة الطاقة بدلًا من ذلك، فاضبط النظام > الإيماءات > الضغط مطولًا على زر التشغيل على «المساعد الرقمي».</string>
+    <string name="help_title_trigger_corner">السحب للأعلى من إحدى الزاويتين السفليتين</string>
+    <string name="help_steps_trigger_corner">اسحب قطريًا للأعلى وإلى الداخل من إحدى الزاويتين السفليتين. يتطلب ذلك تفعيل الخطوة 1 واستخدام التنقل بالإيماءات مع تفعيل «السحب لاستدعاء المساعد» (النظام > الإيماءات > التنقل في النظام).</string>
+    <string name="help_title_trigger_tile">الالتقاط باستخدام بلاطة الإعدادات السريعة</string>
+    <string name="help_steps_trigger_tile">اسحب لوحة الإعدادات للأسفل وانقر على «الدائرة للمشاركة»: ستُغلق اللوحة وتُلتقط الشاشة التي خلفها. يتطلب ذلك تفعيل الخطوة 2 وإضافة البلاطة (راجع «إضافة بلاطة الإعدادات السريعة»).</string>
+    <string name="help_title_trigger_bubble">الالتقاط باستخدام الزر العائم</string>
+    <string name="help_steps_trigger_bubble">فعّل «إظهار زر الالتقاط العائم» أدناه، ثم انقر على الفقاعة من أي تطبيق. اسحبها بعيدًا عن طريقك، أو اضغط عليها مطولًا لفتح هذا التطبيق. يتطلب ذلك تفعيل الخطوة 2.</string>
+    <string name="tile_label">الدائرة للمشاركة</string>
+    <string name="btn_add_tile">إضافة بلاطة الإعدادات السريعة</string>
+    <string name="tile_already_added">بلاطة الإعدادات السريعة موجودة بالفعل.</string>
+    <string name="tile_add_failed">تعذّر فتح نافذة إضافة البلاطة. أضفها من شاشة تعديل لوحة الإعدادات بدلًا من ذلك.</string>
+    <!-- Said wherever something that needs the accessibility service is asked for without it: the tile, the floating button, snapping, the scrollshot buttons. -->
+    <string name="error_needs_accessibility">فعّل طريقة الالتقاط البديلة (الخطوة 2) أولًا.</string>
+    <string name="error_accessibility_stale">طريقة الالتقاط البديلة مفعّلة لكنها لا تعمل. أوقفها ثم فعّلها مجددًا ضمن الإعدادات ← تسهيل الاستخدام.</string>
+    <string name="error_tile_locked">ألغِ قفل الجهاز أولًا لالتقاط الشاشة.</string>
+    <string name="error_called_while_unlocking">كان الجهاز لا يزال قيد إلغاء القفل. شغّل المساعد مجددًا لالتقاط الشاشة.</string>
+    <string name="switch_bubble">إظهار زر الالتقاط العائم</string>
+    <string name="switch_bubble_note">فقاعة صغيرة قابلة للسحب تظهر فوق الشاشة. انقر عليها لالتقاط الشاشة واقتصاصها ومشاركتها من أي مكان؛ واضغط عليها مطولًا لفتح هذا التطبيق.</string>
+    <string name="bubble_opacity">العتامة</string>
+    <string name="bubble_opacity_value">%1$d%%</string>
+    <string name="bubble_long_press_action">فتح %1$s</string>
+    <string name="bubble_open_failed">تعذّر فتح %1$s.</string>
+    <string name="bubble_description">التقاط الشاشة لاقتصاصها ومشاركتها</string>
+
+    <string name="crop_hint">اسحب لتحديد منطقة الاقتصاص</string>
+    <string name="crop_hint_freeform">ارسم دائرة لتحديد منطقة الاقتصاص</string>
+    <string name="crop_hint_restore">انقر لاستعادة آخر منطقة اقتصاص</string>
+    <string name="switch_freeform">الرسم الحر للاقتصاص</string>
+    <string name="switch_freeform_note">ارسم خطًا حرًا مغلقًا حول ما تريد، وسيتحول محيطه إلى إطار الاقتصاص. أوقف الخيار لسحب مستطيل مباشرةً.</string>
+    <string name="switch_snap_edges">محاذاة مع حواف الشاشة</string>
+    <string name="switch_snap">محاذاة مع محتوى الشاشة</string>
+    <string name="switch_snap_note">تُحاذي حواف الاقتصاص الأزرار والبطاقات والصور الظاهرة على الشاشة. تُقرأ مواقع العناصر لحظة الالتقاط ولا تُخزّن. <i>يتطلب ذلك تفعيل طريقة الالتقاط البديلة (الخطوة 2).</i></string>
+    <string name="setup_title">الإعداد</string>
+    <string name="setup_summary_assistant_on">✓ المساعد</string>
+    <string name="setup_summary_assistant_off">✗ المساعد</string>
+    <string name="setup_summary_fallback_on">✓ الطريقة البديلة</string>
+    <string name="setup_summary_fallback_off">✗ الطريقة البديلة</string>
+    <string name="setup_summary">%1$s · %2$s</string>
+    <string name="setup_expanded">موسّع</string>
+    <string name="setup_collapsed">مطوي</string>
+    <string name="triggers_summary_bubble_on">الزر العائم مفعّل</string>
+    <string name="triggers_summary_bubble_off">الزر العائم غير مفعّل</string>
+    <string name="crop_gestures_title"><b>الإيماءات:</b></string>
+    <string name="crop_gestures">• النقر مرتين داخل التحديد: <b>مشاركة</b>\n• الضغط مطولًا داخل التحديد: <b>نسخ</b>\n• النقر مرتين دون تحديد أي شيء: <b>إغلاق</b></string>
+    <string name="crop_tool_title">أداة الاقتصاص</string>
+    <string name="experimental_title">تجريبي</string>
+    <string name="experimental_note">لا يزال قيد الاختبار. يُرجى الإبلاغ عن أي سلوك غير متوقع.</string>
+    <string name="experimental_notice_title">ميزة تجريبية</string>
+    <!-- ^1 the feature, ^2 this device's Android version, ^3 the e-mail address, ^4 the issues page. -->
+    <string name="experimental_notice_message">لا يزال اختبار «^1» جاريًا، وقد لا يعمل في كل التطبيقات.\n\nإذا واجهت مشكلة، يُرجى إبلاغي عبر البريد الإلكتروني (<annotation link="email">^3</annotation>) أو على GitHub (<annotation link="issues">^4</annotation>).\n\nلمساعدتي على إعادة إنتاج المشكلة، يُرجى ذكر:\n• التطبيق والشاشة التي ظهرت فيها المشكلة\n• إصدار Android لديك (على هذا الجهاز: Android ^2)</string>
+    <string name="experimental_notice_ok">حسنًا</string>
+    <!-- The draft of a report: %1$s the feature, %2$s the app's version, %3$s Android's, %4$s its API level, %5$s the device. -->
+    <string name="experimental_report_body">الميزة: %1$s\nالتطبيق الذي حدثت فيه المشكلة: \nالشاشة في ذلك التطبيق: \nما الذي حدث: \n\n\nالدائرة للمشاركة %2$s\nAndroid %3$s (مستوى API %4$s)\n%5$s</string>
+    <string name="switch_scrollshot">دعم لقطات الشاشة الممتدة</string>
+    <string name="scrollshot_row_summary">حجم الخطوة وخيارات لكل تطبيق</string>
+    <string name="scrollshot_title">لقطة شاشة ممتدة</string>
+    <string name="scrollshot_defaults">الإعدادات الافتراضية</string>
+    <string name="scrollshot_apps">إعدادات خاصة بالتطبيقات</string>
+    <string name="scrollshot_apps_count">إعدادات خاصة بالتطبيقات (%1$d)</string>
+    <string name="scrollshot_apps_note">خصّص إعدادات لتطبيق معين. انقر لعرض تطبيقاتك؛ لا تُقرأ القائمة إلا عند فتحها هنا ولا تُحفَظ.</string>
+    <string name="scrollshot_apps_loading">جارٍ قراءة تطبيقاتك…</string>
+    <string name="scrollshot_apps_search">البحث عن التطبيقات</string>
+    <string name="scrollshot_app_snap">محاذاة مع محتوى الشاشة</string>
+    <string name="scrollshot_app_override">إعدادات خاصة بـ %1$s</string>
+    <string name="action_back">رجوع</string>
+    <string name="switch_capture_more_note">يضيف زري «المزيد للأعلى» و«المزيد للأسفل»: يحاكي السحب ويلصق لقطات الشاشة لتمكين التقاط الشاشة أثناء التمرير. <i>يتطلب ذلك تفعيل طريقة الالتقاط البديلة (الخطوة 2).</i></string>
+    <string name="capture_more_step">مسافة التمرير في كل خطوة</string>
+    <string name="capture_more_step_value">%1$d%%</string>
+    <string name="capture_more_step_sideways">مسافة التمرير الجانبي في كل خطوة</string>
+    <string name="capture_more_step_sideways_note">يؤدي كل ضغط على الزر إلى التمرير جانبيًا بنسبة ثابتة من عرض الشاشة. لا تنتقل معارض الصور إلى الصفحة التالية إلا عند السحب إلى ما بعد المنتصف؛ لذا اجعل النسبة أكبر من النصف لهذه الحالات أو التطبيقات.</string>
+    <string name="capture_more_step_note">يؤدي كل ضغط على الزر إلى التمرير بمقدار ثابت من الشاشة. الخطوات الأصغر تجعل دمج الصور أكثر موثوقية، والخطوات الأكبر تقلل عدد النقرات المطلوبة.</string>
+    <string name="switch_capture_more_handles">إزالة مقابض التمرير</string>
+    <string name="switch_capture_more_handles_note">محاولة اكتشاف مقبض شريط التمرير ورسم ما يغطيه بالاستعانة بمعلومات من لقطات الشاشة الأخرى. أوقف الخيار إذا ظهرت شوائب لا تبدو ناتجة عن مواضع الدمج. وإذا أردت المساعدة، فأبلغ عن التطبيق الذي ظهرت فيه الشوائب.</string>
+    <string name="switch_qr">اكتشاف رموز QR</string>
+    <string name="switch_qr_note">تمييز رموز QR الموجودة في اللقطة. انقر على الرمز لنسخ محتواه أو فتح رابطه. يجري المسح محليًا على هذا الجهاز.</string>
+    <string name="qr_color_label">لون التمييز</string>
+    <string name="qr_color_hint">#FFCA28</string>
+    <string name="qr_color_invalid">لون غير صالح. استخدم رمزًا سداسيًا مثل #FFCA28</string>
+    <string name="qr_open">فتح</string>
+    <string name="qr_open_failed">لا يوجد تطبيق يمكنه فتح هذا العنصر</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_copy">نسخ</string>
+    <string name="action_share">مشاركة</string>
+    <string name="action_share_full">مشاركة كاملة</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_capture_more_above">المزيد للأعلى</string>
+    <string name="action_capture_more_left">المزيد لليسار</string>
+    <string name="action_capture_more_right">المزيد لليمين</string>
+    <string name="action_capture_sideways">التقاط صف قابل للتمرير جانبيًا</string>
+    <string name="capture_sideways_pick">انقر على صف قابل للتمرير جانبيًا، أو ارسم مربعًا حوله</string>
+    <string name="capture_sideways_go">انقر على «المزيد لليسار» أو «المزيد لليمين»</string>
+    <string name="capture_sideways_none">لم يُكتشف تمرير جانبي. ارسم مربعًا يدويًا.</string>
+    <string name="capture_sideways_none_restore">لم يُكتشف تمرير جانبي. ارسم مربعًا يدويًا.</string>
+    <string name="action_capture_more_below">المزيد للأسفل</string>
+    <string name="capture_more_end">لا يوجد المزيد لالتقاطه هنا</string>
+    <string name="capture_more_still">لم يتحرك شيء. حاول مجددًا، أو ربما وصلت إلى نهاية الصفحة.</string>
+    <string name="capture_more_blocked">لم يتحرك شيء. بعض التطبيقات لا تسمح للتطبيقات الأخرى بتمرير محتواها.</string>
+    <string name="capture_more_unsure">تعذّرت محاذاة الجزء الجديد. تحقّق من موضع الدمج.</string>
+    <string name="capture_more_too_long">وصلت إلى الحد الأقصى لطول اللقطة</string>
+    <string name="share_title">مشاركة لقطة الشاشة</string>
+    <string name="copied">نُسخ إلى الحافظة</string>
+    <string name="saved">حُفظ في لقطات الشاشة</string>
+    <string name="action_view">عرض</string>
+
+    <string name="error_no_capture">تعذّر التقاط الشاشة. فعّل الطريقة البديلة في تطبيق «الدائرة للمشاركة»، أو فعّل «استخدام بيانات الشاشة» ضمن إعدادات المساعد.</string>
+    <string name="error_capture_failed">فشل التقاط الشاشة (هل الشاشة مؤمّنة؟)</string>
+    <string name="error_save_failed">تعذّر حفظ الصورة. هل مساحة تخزين الجهاز ممتلئة؟</string>
+    <string name="error_not_assistant">عيّن «الدائرة للمشاركة» تطبيقًا للمساعد أولًا.</string>
+    <string name="error_no_settings">تعذّر فتح الإعدادات على هذا الجهاز.</string>
+
+    <string name="error_needs_consent">افتح «الدائرة للمشاركة» ووافق أولًا على بيان الإفصاح الخاص بتسهيل الاستخدام.</string>
+    <string name="fallback_turned_off">أُوقفت خدمة تسهيل الاستخدام.</string>
+
+    <string name="disclosure_title">قبل تفعيل خدمة تسهيل الاستخدام</string>
+    <string name="disclosure_lead">يستخدم «الدائرة للمشاركة» واجهة Android البرمجية لتسهيل الاستخدام (AccessibilityService) لالتقاط شاشتك عندما تطلب ذلك: من بلاطة الإعدادات السريعة، أو الزر العائم، أو كطريقة بديلة عند استخدام إيماءة المساعد. هذا التطبيق ليس أداةً لتسهيل الاستخدام. ولا يجمع مطوّر التطبيق أو أي جهة أخرى أيًّا مما يصل إليه التطبيق، ولا يُرسل إليهم أو يشاركه معهم.</string>
+    <string name="disclosure_access_title">ما الذي يمكن للخدمة الوصول إليه</string>
+    <string name="disclosure_access_body">• لقطة شاشة لشاشتك في اللحظة التي تبدأ فيها الالتقاط.\n\n• مواقع العناصر وأحجامها على الشاشة (وليس نصوصها أو محتواها) في اللحظة نفسها، وفقط عند تفعيل «محاذاة مع محتوى الشاشة».\n\n• إشعارات من النظام عند فتح نافذة أو تغييرها، بما في ذلك عنوان النافذة والتطبيق الذي تنتمي إليه، ومواقع نوافذ النظام للتعرّف على شاشة القفل وقائمة الطاقة ولوحة الإشعارات، حتى يبتعد الزر العائم وأداة الاقتصاص عن طريقها.</string>
+    <string name="disclosure_use_title">كيفية استخدام هذه البيانات</string>
+    <string name="disclosure_use_body">• تُعالج جميع البيانات على هذا الجهاز، في الذاكرة، لعرض أداة الاقتصاص.\n\n• يُكتب الجزء الذي تشاركه أو تنسخه في ذاكرة التخزين المؤقت الخاصة بالتطبيق، كي يتمكن التطبيق المستلِم من قراءته. تُحذف الملفات التي مضى على إنشائها أكثر من ساعة في المرة التالية التي تلتقط فيها الشاشة.\n\n• لا تغادر الصورة تطبيق «الدائرة للمشاركة» إلا عندما تنقر على «مشاركة» أو «نسخ»، وعندها تُرسل فقط إلى التطبيق الذي تختاره، أو عندما تنقر على «حفظ» لتُضاف إلى معرض الصور (ضمن «لقطات الشاشة»). لا يملك التطبيق إذن الوصول إلى الإنترنت.\n\n• لا تنقر الخدمة نيابةً عنك، ولا تكتب أو تغيّر الإعدادات. الإجراءان الوحيدان اللذان تنفذهما هما: (1) إغلاق لوحة الإشعارات عند استخدام بلاطة الإعدادات السريعة؛ (2) محاكاة إيماءة سحب عند استخدام ميزة لقطات الشاشة الممتدة (التجريبية). وبالنسبة إلى إعدادات كل تطبيق، يطلب التطبيق قائمة بالتطبيقات المثبّتة عند فتح تلك القائمة الفرعية.</string>
+    <string name="disclosure_choice_title">الخيار لك</string>
+    <string name="disclosure_choice_body">انقر على «موافق» للسماح بذلك. بعدئذٍ، فعّل الخدمة من إعدادات تسهيل الاستخدام في Android. ويمكنك إيقافها من هناك في أي وقت.\n\nانقر على «لا شكرًا» لمواصلة استخدام «الدائرة للمشاركة» بإيماءة المساعد فقط. ستظل البلاطة والزر العائم والمحاذاة مع محتوى الشاشة متوقفة، وستُوقف الخدمة إذا كانت مفعّلة بالفعل.</string>
+    <string name="disclosure_agree">موافق</string>
+    <string name="disclosure_decline">لا شكرًا</string>
+
+    <string name="about_title">حول التطبيق</string>
+    <string name="btn_privacy">سياسة الخصوصية</string>
+    <string name="btn_imprint">البيانات القانونية</string>
+    <string name="btn_licenses">التراخيص</string>
+    <string name="licenses_title">التراخيص</string>
+    <string name="licenses_row_summary">ترخيص التطبيق والمكوّنات التي بُني بها</string>
+    <string name="licenses_app_title">ترخيص «الدائرة للمشاركة»</string>
+    <string name="licenses_note">«الدائرة للمشاركة» برنامج حر: يمكنك مشاركته وتعديله بموجب الإصدار 3 من رخصة جنو العمومية أو أي إصدار أحدث. يُقدَّم دون أي ضمان. وقد بُني باستخدام المكوّنات أدناه، وفقًا للتراخيص الخاصة بها.</string>
+    <string name="btn_source_code">الشفرة المصدرية</string>
+    <string name="licenses_text">نص الترخيص</string>
+    <string name="licenses_read">قراءة الترخيص</string>
+    <string name="licenses_sdk_note">ليس مفتوح المصدر. يُستخدم في إصدار Google Play فقط لعرض النصائح داخل التطبيق.</string>
+    <string name="licenses_bundled_title">ضمن مكتبات Google</string>
+    <string name="licenses_bundled_note">تتضمن مكتبات Google Play هذه المكوّنات. وهذه هي إشعاراتها كما توفّرها Google:</string>
+    <string name="licenses_copyright">© %1$s</string>
+    <string name="support_note">«الدائرة للمشاركة» تطبيق مجاني. إذا أعجبك، يمكنك دعم تطويره بتبرع اختياري بسيط. لا يتيح التبرع أي ميزات إضافية.</string>
+    <string name="btn_support">ادعمني بفنجان قهوة!</string>
+    <string name="btn_feedback">إرسال ملاحظات</string>
+    <string name="feedback_subject">ملاحظات حول «الدائرة للمشاركة» (الإصدار %1$s)</string>
+
+    <string name="accessibility_service_label">الدائرة للمشاركة</string>
+    <string name="accessibility_service_description">تتيح هذه الخدمة لتطبيق «الدائرة للمشاركة» التقاط الشاشة عند تشغيله بإيماءة المساعد أو بلاطة الإعدادات السريعة أو الزر العائم الخاص بالتطبيق، لتتمكن بعد ذلك من اقتصاص الصورة ومشاركتها. لا تُقرأ محتويات الشاشة (مواقع العناصر) إلا لحظة الالتقاط، وفقط لمحاذاة إطار الاقتصاص مع ما يظهر على الشاشة، إذا كانت هذه الميزة مفعّلة في التطبيق. لا يحدث أي التقاط حتى تبدأه بنفسك، ولا يُحفظ شيء على جهازك إلا إذا نقرت على «حفظ»، ولا يغادر أي شيء الجهاز مطلقًا.</string>
+</resources>
