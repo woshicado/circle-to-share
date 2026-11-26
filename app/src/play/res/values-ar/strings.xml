@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Play takes tips through its own billing (see Support.kt). -->
+    <string name="support_note">تطبيق Circle to Share مجاني. إذا أعجبك، يمكنك دعم تطويره بإكرامية بسيطة واختيارية. لا تفتح الإكرامية قفل أي ميزات.</string>
+    <string name="tip_title">اشترِ لي قهوة</string>
+    <string name="tip_small">قهوة صغيرة</string>
+    <string name="tip_medium">قهوة</string>
+    <string name="tip_large">قهوة وكعكة</string>
+    <string name="tip_thanks">شكرًا على القهوة!</string>
+    <string name="tip_pending">شكرًا لك! سيُتمّ Google Play عملية الدفع بعد إتمام معالجتها.</string>
+    <string name="tip_still_open">لا تزال Google Play تُتمّ معالجة إكرامية سابقة بهذا المبلغ. يمكنك تقديم إكرامية أخرى بعد اكتمالها.</string>
+    <string name="tip_unavailable">الإكراميات غير متاحة حاليًا. تأكّد من تسجيل الدخول إلى Google Play والاتصال بالإنترنت.</string>
+    <string name="tip_failed">تعذّر إتمام الإكرامية. يُرجى المحاولة لاحقًا.</string>
+</resources>

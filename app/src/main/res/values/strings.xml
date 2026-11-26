@@ -108,6 +108,7 @@
     <!-- ^1 the feature, ^2 this device's Android version, ^3 the e-mail address, ^4 the issues page. -->
     <string name="experimental_notice_message">\"^1\" is still being tried out and may not work in every app.\n\nIf you run into a problem, please tell me by e-mail (<annotation link="email">^3</annotation>) or on GitHub (<annotation link="issues">^4</annotation>).\n\nSo that I can reproduce it, please mention:\n• the app, and the screen in it, where it happened\n• your Android version (this device: Android ^2)</string>
     <string name="experimental_notice_ok">OK</string>
+    <!-- The draft of a report, in English in every language (it is sent to me): %1$s the feature, %2$s the app's version, %3$s Android's, %4$s its API level, %5$s the device. -->
     <string name="experimental_report_body" translatable="false">Feature: %1$s\nApp it happened in: \nScreen in that app: \nWhat happened: \n\n\nCircle to Share %2$s\nAndroid %3$s (API %4$s)\n%5$s</string>
     <string name="switch_scrollshot">Scrollshot support</string>
     <string name="scrollshot_row_summary">Step size and per-app options</string>
@@ -217,6 +218,7 @@
     <string name="support_note">Circle to Share is free. If you like it, you can support its development with a small, voluntary donation. It unlocks nothing.</string>
     <string name="btn_support">Buy me a coffee!</string>
     <string name="btn_feedback">Send feedback</string>
+    <!-- In English in every language, like the report above. -->
     <string name="feedback_subject" translatable="false">Circle to Share feedback (v%1$s)</string>
     <string name="feedback_email" translatable="false">android@woshicado.eu</string>
     <string name="url_issues" translatable="false">https://github.com/woshicado/circle-to-share/issues</string>
